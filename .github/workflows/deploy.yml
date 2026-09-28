@@ -37,6 +37,7 @@ jobs:
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
             go build -ldflags "-s -w -X 'github.com/QuantumNous/new-api/common.Version=$VERSION' -extldflags '-static'" \
             -o new-api
+          gzip -9 -c new-api > new-api.gz
       - name: Upload over SSH
         env:
           HOST: ${{ secrets.DEPLOY_HOST }}
@@ -47,7 +48,7 @@ jobs:
           printf '%s\n' "$KEY" > key
           ssh -i key -o StrictHostKeyChecking=accept-new "$USER@$HOST" \
             "mkdir -p /opt/new-api && cp -a /opt/new-api/new-api /opt/new-api/new-api.prev 2>/dev/null || true"
-          scp -i key new-api "$USER@$HOST:/opt/new-api/new-api.next"
+          scp -i key new-api.gz "$USER@$HOST:/opt/new-api/new-api.next.gz"
       - name: Switch binary and restart
         env:
           HOST: ${{ secrets.DEPLOY_HOST }}
@@ -57,7 +58,9 @@ jobs:
           install -m 600 /dev/null key
           printf '%s\n' "$KEY" > key
           ssh -i key "$USER@$HOST" "\
+            gunzip -c /opt/new-api/new-api.next.gz > /opt/new-api/new-api.next && \
             install -m 755 /opt/new-api/new-api.next /opt/new-api/new-api && \
+            rm -f /opt/new-api/new-api.next.gz && \
             sudo systemctl restart new-api"
           sleep 3
           ssh -i key "$USER@$HOST" "curl -fsS http://127.0.0.1:3000/api/status >/dev/null && echo healthy"

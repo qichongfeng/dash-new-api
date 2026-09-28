@@ -1,6 +1,6 @@
 <div align="center">
 
-![tooolx](/web/public/tooolx-icon.svg)
+<img src="/web/public/tooolx-icon.svg" width="120" alt="tooolx" />
 
 # dash-new-api
 

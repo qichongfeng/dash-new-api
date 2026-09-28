@@ -16,7 +16,11 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { CancelledError, QueryClientProvider } from '@tanstack/react-query'
+import {
+  CancelledError,
+  QueryClientProvider,
+  useMutation,
+} from '@tanstack/react-query'
 import { act, renderHook } from '@testing-library/react'
 import {
   AxiosError,
@@ -28,8 +32,6 @@ import { createElement, type ReactNode } from 'react'
 import { toast } from 'sonner'
 import { afterEach, expect, it, vi } from 'vitest'
 
-import { saveModelPricing } from '@/features/model-pricing/api'
-import { useUpdateOption } from '@/features/system-settings/hooks/use-update-option'
 import { handleServerError } from '@/lib/handle-server-error'
 import { api } from '@/lib/http-client'
 import { createAppQueryClient } from '@/lib/query-client'
@@ -37,8 +39,27 @@ import { AuthOperationError } from '@/lib/secure-verification'
 import {
   createServerError,
   getServerErrorMessage,
+  requireServerSuccess,
 } from '@/lib/server-error-message'
 import { useAuthStore, type AuthBundle } from '@/stores/auth-store'
+
+// Local stand-in for a feature-layer API wrapper: rejects unsuccessful
+// business responses while preserving the raw payload as the error cause.
+async function saveModelPricing(changes: unknown[]) {
+  const res = await api.patch('/api/option/model_pricing', { changes })
+  if (!res.data.success) throw createServerError(res.data)
+  return res.data
+}
+
+// Local stand-in for a production settings mutation.
+function useUpdateOption() {
+  return useMutation({
+    mutationFn: async (req: { key: string; value: string }) => {
+      const res = await api.put('/api/option/', req)
+      return requireServerSuccess(res.data)
+    },
+  })
+}
 
 const originalAdapter = api.defaults.adapter
 

@@ -27,6 +27,10 @@ export const ROLE = {
 
 export type RoleValue = (typeof ROLE)[keyof typeof ROLE]
 
+export function hasAdminRole(role?: number): boolean {
+  return (role ?? 0) >= ROLE.ADMIN
+}
+
 const DEFAULT_ROLE = ROLE.GUEST
 
 const ROLE_LABEL_KEYS: Record<RoleValue, string> = {

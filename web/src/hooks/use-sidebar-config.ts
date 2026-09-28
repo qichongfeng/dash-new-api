@@ -37,11 +37,6 @@ type SidebarModulesUserConfig = SidebarModulesAdminConfig | null
  * Default sidebar modules configuration
  */
 const DEFAULT_SIDEBAR_MODULES: SidebarModulesAdminConfig = {
-  chat: {
-    enabled: true,
-    playground: true,
-    chat: true,
-  },
   console: {
     enabled: true,
     detail: true,
@@ -50,12 +45,6 @@ const DEFAULT_SIDEBAR_MODULES: SidebarModulesAdminConfig = {
     audit: true,
     midjourney: true,
     task: true,
-  },
-  personal: {
-    enabled: true,
-    topup: true,
-    personal: true,
-    security: true,
   },
   admin: {
     enabled: true,
@@ -97,7 +86,6 @@ const mergeWithDefaultSidebarModules = (
  * Mapping from URL to configuration keys
  */
 const URL_TO_CONFIG_MAP: Record<string, { section: string; module: string }> = {
-  '/playground': { section: 'chat', module: 'playground' },
   '/dashboard': { section: 'console', module: 'detail' },
   '/dashboard/overview': { section: 'console', module: 'detail' },
   '/dashboard/models': { section: 'console', module: 'detail' },
@@ -108,9 +96,6 @@ const URL_TO_CONFIG_MAP: Record<string, { section: string; module: string }> = {
   '/usage-logs/audit': { section: 'console', module: 'audit' },
   '/usage-logs/drawing': { section: 'console', module: 'midjourney' },
   '/usage-logs/task': { section: 'console', module: 'task' },
-  '/wallet': { section: 'personal', module: 'topup' },
-  '/profile': { section: 'personal', module: 'personal' },
-  '/security': { section: 'personal', module: 'security' },
   '/channels': { section: 'admin', module: 'channel' },
   '/models': { section: 'admin', module: 'models' },
   '/models/metadata': { section: 'admin', module: 'models' },
@@ -203,18 +188,6 @@ function isNavItemVisible(
   adminConfig: SidebarModulesAdminConfig,
   userConfig: SidebarModulesUserConfig
 ): boolean {
-  // Handle dynamic chat presets type — also runs the admin × user AND gate
-  if ('type' in item && item.type === 'chat-presets') {
-    const adminChat = adminConfig.chat
-    const adminAllowed = Boolean(adminChat?.enabled && adminChat.chat === true)
-    if (!adminAllowed) return false
-    if (!userConfig) return true
-    const userChat = userConfig.chat
-    if (!userChat) return true
-    if (userChat.enabled === false) return false
-    return userChat.chat !== false
-  }
-
   // Handle direct link type
   if ('url' in item && item.url) {
     const configUrls = item.configUrls ?? [item.url]
@@ -312,24 +285,4 @@ export function useSidebarConfig(navGroups: NavGroup[]): NavGroup[] {
   )
 
   return filteredNavGroups
-}
-
-/**
- * Check whether a single route is visible under the current sidebar_modules
- * config. Used by entries living outside the sidebar (e.g. the profile
- * dropdown's wallet link) so they honour the same "wallet display" toggle.
- */
-export function useIsSidebarModuleVisible(url: string): boolean {
-  const { status } = useStatus()
-  const { auth } = useAuthStore()
-
-  const adminConfig = parseSidebarConfig(
-    status?.SidebarModulesAdmin as string | null | undefined
-  )
-  const userConfig =
-    auth?.user?.permissions?.sidebar_settings === false
-      ? null
-      : parseUserSidebarConfig(auth?.user?.sidebar_modules)
-
-  return isModuleEnabled(url, adminConfig, userConfig)
 }

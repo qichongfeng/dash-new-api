@@ -17,9 +17,15 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { createFileRoute, redirect } from '@tanstack/react-router'
+import { t } from 'i18next'
+import { toast } from 'sonner'
 
 import { AuthenticatedLayout } from '@/components/layout'
-import { resolveAuthentication } from '@/lib/auth-session'
+import {
+  clearAuthentication,
+  resolveAuthentication,
+} from '@/lib/auth-session'
+import { hasAdminRole } from '@/lib/roles'
 import { useAuthStore } from '@/stores/auth-store'
 
 export const Route = createFileRoute('/_authenticated')({
@@ -32,7 +38,14 @@ export const Route = createFileRoute('/_authenticated')({
 
     const { auth } = useAuthStore.getState()
 
-    if (!auth.user || !auth.accessToken) {
+    // The dashboard is admin-only. Clear the client session so the sign-in
+    // page does not bounce an authenticated non-admin back into this guard.
+    if (!auth.user || !auth.accessToken || !hasAdminRole(auth.user.role)) {
+      if (auth.user) {
+        clearAuthentication(false)
+        toast.error(t('Sign-in is restricted to administrators'))
+        throw redirect({ to: '/sign-in' })
+      }
       throw redirect({
         to: '/sign-in',
         search: { redirect: location.href },

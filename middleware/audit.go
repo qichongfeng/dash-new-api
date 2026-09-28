@@ -224,6 +224,8 @@ func TokenOperationAudit() gin.HandlerFunc {
 			action, content = "token.delete_batch", "API token batch deletion"
 		case "POST /api/token/:id/key":
 			action, content = "token.key_view", "API token key access"
+		case "POST /api/token/admin/:id/key":
+			action, content = "token.admin_key_view", "Admin access to another user's API token key"
 		case "POST /api/token/batch/keys":
 			action, content = "token.key_view_batch", "API token batch key access"
 		default:
@@ -252,6 +254,9 @@ func TokenOperationAudit() gin.HandlerFunc {
 			entry.Success = entry.Status < 400 && common.GetContextKeyBool(c, constant.ContextKeyTokenAuditSucceeded)
 		}
 		model.RecordAuditLog(c, entry)
+		// Routes under AdminAuth would also hit the authHelper admin audit
+		// fallback; mark the entry as recorded to avoid double logging.
+		common.SetContextKey(c, constant.ContextKeyAuditLogged, true)
 	}
 }
 

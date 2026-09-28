@@ -892,3 +892,128 @@ func verifyAPITokenAudit(t *testing.T) {
 		assert.EqualValues(t, 1, count)
 	})
 }
+
+func setupAdminTokenControllerTest(t *testing.T) *gorm.DB {
+	t.Helper()
+
+	db := openTokenControllerTestDB(t)
+	if err := db.AutoMigrate(&model.Token{}, &model.User{}); err != nil {
+		t.Fatalf("failed to migrate token admin tables: %v", err)
+	}
+	return db
+}
+
+func seedAdminTokenUser(t *testing.T, db *gorm.DB, username string, role int, status int) *model.User {
+	t.Helper()
+
+	user := &model.User{
+		Username: username,
+		Password: "password-hash",
+		Role:     role,
+		Status:   status,
+		AffCode:  username + "-aff",
+	}
+	require.NoError(t, db.Create(user).Error)
+	return user
+}
+
+func newAdminTokenContext(t *testing.T, method string, target string, userID int, role int) (*gin.Context, *httptest.ResponseRecorder) {
+	t.Helper()
+
+	ctx, recorder := newAuthenticatedContext(t, method, target, nil, userID)
+	ctx.Set("role", role)
+	ctx.Set("username", "operator")
+	return ctx, recorder
+}
+
+func TestAdminGetUserTokensReturnsMaskedTokensForTargetUser(t *testing.T) {
+	db := setupAdminTokenControllerTest(t)
+	target := seedAdminTokenUser(t, db, "target-user", common.RoleCommonUser, common.UserStatusEnabled)
+	other := seedAdminTokenUser(t, db, "other-user", common.RoleCommonUser, common.UserStatusEnabled)
+	owned := seedToken(t, db, target.Id, "target-token", "target1234token5678")
+	seedToken(t, db, other.Id, "other-token", "other1234token5678")
+
+	ctx, recorder := newAdminTokenContext(t, http.MethodGet,
+		fmt.Sprintf("/api/token/admin/?user_id=%d", target.Id), 1, common.RoleRootUser)
+	AdminGetUserTokens(ctx)
+
+	response := decodeAPIResponse(t, recorder)
+	require.True(t, response.Success, "message: %s", response.Message)
+	var page tokenPageResponse
+	require.NoError(t, common.Unmarshal(response.Data, &page))
+	require.Len(t, page.Items, 1)
+	assert.Equal(t, owned.Id, page.Items[0].ID)
+	assert.NotEqual(t, "target1234token5678", page.Items[0].Key, "admin list must stay masked")
+}
+
+func TestAdminGetUserTokenKeyRevealsFullKeyScopedToTargetUser(t *testing.T) {
+	db := setupAdminTokenControllerTest(t)
+	target := seedAdminTokenUser(t, db, "target-user", common.RoleCommonUser, common.UserStatusEnabled)
+	other := seedAdminTokenUser(t, db, "other-user", common.RoleCommonUser, common.UserStatusEnabled)
+	owned := seedToken(t, db, target.Id, "target-token", "target1234token5678")
+
+	ctx, recorder := newAdminTokenContext(t, http.MethodPost,
+		fmt.Sprintf("/api/token/admin/%d/key?user_id=%d", owned.Id, target.Id), 1, common.RoleRootUser)
+	ctx.Params = gin.Params{{Key: "id", Value: strconv.Itoa(owned.Id)}}
+	AdminGetUserTokenKey(ctx)
+
+	response := decodeAPIResponse(t, recorder)
+	require.True(t, response.Success, "message: %s", response.Message)
+	var payload tokenKeyResponse
+	require.NoError(t, common.Unmarshal(response.Data, &payload))
+	assert.Equal(t, "target1234token5678", payload.Key)
+
+	// A wrong user_id must not reveal the key: the token does not belong to
+	// that user, so the lookup fails instead of leaking cross-user access.
+	wrongCtx, wrongRecorder := newAdminTokenContext(t, http.MethodPost,
+		fmt.Sprintf("/api/token/admin/%d/key?user_id=%d", owned.Id, other.Id), 1, common.RoleRootUser)
+	wrongCtx.Params = gin.Params{{Key: "id", Value: strconv.Itoa(owned.Id)}}
+	AdminGetUserTokenKey(wrongCtx)
+	wrongResponse := decodeAPIResponse(t, wrongRecorder)
+	assert.False(t, wrongResponse.Success)
+}
+
+func TestAdminTokenHandlersRejectNonAdminRole(t *testing.T) {
+	db := setupAdminTokenControllerTest(t)
+	target := seedAdminTokenUser(t, db, "target-user", common.RoleCommonUser, common.UserStatusEnabled)
+	owned := seedToken(t, db, target.Id, "target-token", "target1234token5678")
+
+	listCtx, listRecorder := newAdminTokenContext(t, http.MethodGet,
+		fmt.Sprintf("/api/token/admin/?user_id=%d", target.Id), target.Id, common.RoleCommonUser)
+	AdminGetUserTokens(listCtx)
+	assert.False(t, decodeAPIResponse(t, listRecorder).Success)
+
+	keyCtx, keyRecorder := newAdminTokenContext(t, http.MethodPost,
+		fmt.Sprintf("/api/token/admin/%d/key?user_id=%d", owned.Id, target.Id), target.Id, common.RoleCommonUser)
+	keyCtx.Params = gin.Params{{Key: "id", Value: strconv.Itoa(owned.Id)}}
+	AdminGetUserTokenKey(keyCtx)
+	assert.False(t, decodeAPIResponse(t, keyRecorder).Success)
+}
+
+func TestAdminTokenHandlersEnforceTargetRoleAndStatus(t *testing.T) {
+	db := setupAdminTokenControllerTest(t)
+	adminTarget := seedAdminTokenUser(t, db, "admin-target", common.RoleAdminUser, common.UserStatusEnabled)
+	disabledTarget := seedAdminTokenUser(t, db, "disabled-user", common.RoleCommonUser, common.UserStatusDisabled)
+	adminToken := seedToken(t, db, adminTarget.Id, "admin-token", "admin1234token5678")
+	disabledToken := seedToken(t, db, disabledTarget.Id, "disabled-token", "off1234token5678")
+
+	// An admin cannot operate on an equal-role target; root can.
+	equalCtx, equalRecorder := newAdminTokenContext(t, http.MethodPost,
+		fmt.Sprintf("/api/token/admin/%d/key?user_id=%d", adminToken.Id, adminTarget.Id), 2, common.RoleAdminUser)
+	equalCtx.Params = gin.Params{{Key: "id", Value: strconv.Itoa(adminToken.Id)}}
+	AdminGetUserTokenKey(equalCtx)
+	assert.False(t, decodeAPIResponse(t, equalRecorder).Success)
+
+	rootCtx, rootRecorder := newAdminTokenContext(t, http.MethodPost,
+		fmt.Sprintf("/api/token/admin/%d/key?user_id=%d", adminToken.Id, adminTarget.Id), 1, common.RoleRootUser)
+	rootCtx.Params = gin.Params{{Key: "id", Value: strconv.Itoa(adminToken.Id)}}
+	AdminGetUserTokenKey(rootCtx)
+	assert.True(t, decodeAPIResponse(t, rootRecorder).Success)
+
+	// A disabled target user is rejected outright.
+	disabledCtx, disabledRecorder := newAdminTokenContext(t, http.MethodGet,
+		fmt.Sprintf("/api/token/admin/?user_id=%d", disabledTarget.Id), 1, common.RoleRootUser)
+	AdminGetUserTokens(disabledCtx)
+	assert.False(t, decodeAPIResponse(t, disabledRecorder).Success)
+	_ = disabledToken
+}

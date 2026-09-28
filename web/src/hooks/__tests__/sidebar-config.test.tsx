@@ -21,11 +21,6 @@ import { cleanup, renderHook } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { checkIsActive } from '@/components/layout/lib/url-utils'
-import {
-  parseSidebarModulesAdmin,
-  serializeSidebarModulesAdmin,
-} from '@/features/system-settings/maintenance/config'
 import { useAuthStore } from '@/stores/auth-store'
 
 import { useSidebarConfig } from '../use-sidebar-config'
@@ -73,110 +68,95 @@ function sidebarFor(admin?: object, user?: object, canConfigure = true) {
   return result
 }
 
-describe('security sidebar visibility', () => {
-  it('old configurations show Security & Access immediately after Profile and keep API Keys', () => {
-    const { result } = sidebarFor(
-      { personal: { enabled: true, personal: true, topup: true } },
-      { personal: { enabled: true, personal: true } }
-    )
+const GENERAL_TITLES = [
+  'Overview',
+  'Dashboard',
+  'API Keys',
+  'Usage Logs',
+  'Audit Logs',
+  'Task Logs',
+]
+
+describe('sidebar module visibility', () => {
+  it('shows the console entries and the admin group by default', () => {
+    const { result } = sidebarFor()
+    expect(result.current.map((group) => group.id)).toEqual([
+      'general',
+      'admin',
+    ])
     expect(
       result.current
-        .find((group) => group.id === 'personal')
+        .find((group) => group.id === 'general')
         ?.items.map((item) => item.title)
-    ).toEqual(['Wallet', 'Profile', 'Security & Access'])
+    ).toEqual(GENERAL_TITLES)
     expect(
-      result.current
-        .flatMap((group) => group.items)
-        .some((item) => item.title === 'API Keys')
-    ).toBe(true)
+      result.current.find((group) => group.id === 'admin')?.items.length
+    ).toBeGreaterThan(0)
   })
+
   it.each([
-    [{ personal: { enabled: true, security: false } }, undefined],
-    [{ personal: { enabled: false } }, { personal: { security: true } }],
-    [undefined, { personal: { enabled: true, security: false } }],
-    [undefined, { personal: { enabled: false } }],
+    [{ console: { enabled: false } }, undefined],
+    [undefined, { console: { enabled: false } }],
   ])(
-    'admin or user disablement hides Security & Access (%j, %j)',
+    'admin or user disablement hides every console entry (%j, %j)',
     (admin, user) => {
       const { result } = sidebarFor(admin, user)
-      expect(
-        result.current
-          .flatMap((group) => group.items)
-          .some((item) => item.title === 'Security & Access')
-      ).toBe(false)
+      const titles = result.current.flatMap((group) =>
+        group.items.map((item) => item.title)
+      )
+      for (const title of GENERAL_TITLES) {
+        expect(titles).not.toContain(title)
+      }
     }
   )
+
+  it.each([
+    [{ console: { enabled: true, detail: false } }, undefined],
+    [undefined, { console: { enabled: true, detail: false } }],
+  ])(
+    'detail disablement hides only the dashboard entries (%j, %j)',
+    (admin, user) => {
+      const { result } = sidebarFor(admin, user)
+      const titles = result.current.flatMap((group) =>
+        group.items.map((item) => item.title)
+      )
+      expect(titles).not.toContain('Overview')
+      expect(titles).not.toContain('Dashboard')
+      expect(titles).toContain('API Keys')
+      expect(titles).toContain('Usage Logs')
+    }
+  )
+
+  it.each([
+    [{ admin: { enabled: true, channel: false } }, undefined],
+    [undefined, { admin: { enabled: true, setting: false } }],
+  ])(
+    'module-level disablement hides only that admin entry (%j, %j)',
+    (admin, user) => {
+      const { result } = sidebarFor(admin, user)
+      const titles = result.current.flatMap((group) =>
+        group.items.map((item) => item.title)
+      )
+      expect(titles).toEqual(expect.arrayContaining(GENERAL_TITLES))
+      if (admin) {
+        expect(titles).not.toContain('Channels')
+        expect(titles).toContain('Users')
+      } else {
+        expect(titles).not.toContain('System Settings')
+        expect(titles).toContain('Channels')
+      }
+    }
+  )
+
   it('users without sidebar configuration permission retain the admin view', () => {
     const { result } = sidebarFor(
       undefined,
-      { personal: { security: false } },
+      { console: { enabled: true, detail: false } },
       false
     )
-    expect(
-      result.current
-        .flatMap((group) => group.items)
-        .some((item) => item.title === 'Security & Access')
-    ).toBe(true)
-  })
-})
-
-describe('audit log sidebar entry', () => {
-  it('admin settings default Audit Logs to visible and preserve its independent toggle when saved', () => {
-    const config = parseSidebarModulesAdmin(
-      '{"console":{"enabled":true,"log":true}}'
-    )
-    expect(config.console.audit).toBe(true)
-    config.console.audit = false
-    const saved = parseSidebarModulesAdmin(serializeSidebarModulesAdmin(config))
-    const { result } = sidebarFor(saved)
-    const titles = result.current
-      .flatMap((group) => group.items)
-      .map((item) => item.title)
-    expect(titles).not.toContain('Audit Logs')
-    expect(titles).toContain('Usage Logs')
-  })
-
-  it('legacy configurations show a separate Audit Logs link immediately after Usage Logs', () => {
-    const { result } = sidebarFor(
-      { console: { enabled: true, log: true } },
-      { console: { enabled: true, log: true } }
-    )
-    const items =
-      result.current.find((group) => group.id === 'general')?.items ?? []
-    const usageIndex = items.findIndex((item) => item.title === 'Usage Logs')
-    expect(items[usageIndex + 1]).toMatchObject({
-      title: 'Audit Logs',
-      url: '/usage-logs/audit',
-    })
-    const selected = items.filter((item) =>
-      checkIsActive('/usage-logs/audit', item)
-    )
-    expect(selected.map((item) => item.title)).toEqual(['Audit Logs'])
-  })
-
-  it.each([
-    [{ console: { enabled: true, audit: false } }, undefined],
-    [{ console: { enabled: false } }, { console: { audit: true } }],
-    [undefined, { console: { enabled: true, audit: false } }],
-    [undefined, { console: { enabled: false } }],
-  ])(
-    'admin and personal visibility rules can hide Audit Logs (%j, %j)',
-    (admin, user) => {
-      const { result } = sidebarFor(admin, user)
-      expect(
-        result.current
-          .flatMap((group) => group.items)
-          .some((item) => item.title === 'Audit Logs')
-      ).toBe(false)
-    }
-  )
-
-  it('hiding Usage Logs does not hide the independently configured Audit Logs entry', () => {
-    const { result } = sidebarFor({ console: { enabled: true, log: false } })
-    const titles = result.current
-      .flatMap((group) => group.items)
-      .map((item) => item.title)
-    expect(titles).not.toContain('Usage Logs')
-    expect(titles).toContain('Audit Logs')
+    expect(result.current.map((group) => group.id)).toEqual([
+      'general',
+      'admin',
+    ])
   })
 })

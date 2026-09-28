@@ -48,7 +48,8 @@ import type {
 import { pricingOptions } from '@/features/model-pricing/pricing'
 import { usePricingColumns } from '@/features/pricing/components/pricing-columns'
 import type { PricingModel } from '@/features/pricing/types'
-import fr from '@/i18n/locales/fr.json'
+
+import en from '@/i18n/locales/en.json'
 import zhCN from '@/i18n/locales/zh.json'
 import { api } from '@/lib/api'
 import { useAuthStore } from '@/stores/auth-store'
@@ -195,7 +196,21 @@ beforeEach(() => {
     currency: { ...DEFAULT_CURRENCY_CONFIG, quotaDisplayType: 'USD' },
   })
   vi.spyOn(window, 'scrollTo').mockImplementation(() => {})
-  i18n.addResourceBundle('fr', 'translation', fr.translation, true, true)
+  // The retired French locale provided the long labels these truncation
+  // regressions need, so derive an equivalent long-string bundle from English.
+  i18n.addResourceBundle(
+    'fr',
+    'translation',
+    {
+      ...en.translation,
+      'Channels {{channels}} · Groups {{groups}}':
+        'Canaux {{channels}} · Groupes {{groups}}',
+      'Add metadata': 'Ajouter des métadonnées',
+      Unavailable: 'Indisponible',
+    },
+    true,
+    true
+  )
   i18n.addResourceBundle('zhCN', 'translation', zhCN.translation, true, true)
 })
 

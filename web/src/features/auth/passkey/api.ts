@@ -80,32 +80,6 @@ export function deletePasskey(
   )
 }
 
-export function beginPasskeyLogin(
-  rpID?: string,
-  signal?: AbortSignal
-): Promise<PasskeyOptionsPayload> {
-  return authResult(
-    api.post<ApiResponse<PasskeyOptionsPayload>>(
-      '/api/user/passkey/login/begin',
-      rpID ? { rp_id: rpID } : undefined,
-      { ...authRequestOptions, signal, skipAuthRefresh: true }
-    )
-  )
-}
-
-export async function finishPasskeyLogin(
-  flowToken: string,
-  payload: Record<string, unknown>,
-  signal?: AbortSignal
-): Promise<ApiResponse> {
-  const res = await api.post<ApiResponse>(
-    '/api/user/passkey/login/finish',
-    { flow_token: flowToken, credential: payload },
-    { skipAuthRefresh: true, signal }
-  )
-  return res.data
-}
-
 export function beginPasskeyVerification(
   operation: VerificationOperation,
   signal?: AbortSignal,

@@ -16,10 +16,10 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { ROLE } from '@/lib/roles'
 /**
  * Hook for checking admin privileges
  */
+import { hasAdminRole } from '@/lib/roles'
 import { useAuthStore } from '@/stores/auth-store'
 
 /**
@@ -27,5 +27,5 @@ import { useAuthStore } from '@/stores/auth-store'
  */
 export function useIsAdmin(): boolean {
   const { user } = useAuthStore((state) => state.auth)
-  return (user?.role ?? 0) >= ROLE.ADMIN
+  return hasAdminRole(user?.role)
 }

@@ -16,4 +16,22 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-export * from './format'
+import { describe, expect, test } from 'vitest'
+
+import { ROLE, hasAdminRole } from '../roles'
+
+describe('hasAdminRole', () => {
+  test.each([undefined, ROLE.GUEST, ROLE.USER, 9])(
+    'treats role %s as non-admin',
+    (role) => {
+      expect(hasAdminRole(role)).toBe(false)
+    }
+  )
+
+  test.each([ROLE.ADMIN, ROLE.SUPER_ADMIN])(
+    'treats role %s as admin',
+    (role) => {
+      expect(hasAdminRole(role)).toBe(true)
+    }
+  )
+})

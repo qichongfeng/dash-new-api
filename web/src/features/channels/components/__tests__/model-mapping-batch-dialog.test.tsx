@@ -22,7 +22,7 @@ import { createInstance } from 'i18next'
 import { I18nextProvider } from 'react-i18next'
 import { expect, test, vi } from 'vitest'
 
-import fr from '@/i18n/locales/fr.json'
+import en from '@/i18n/locales/en.json'
 
 import { ModelMappingBatchDialog } from '../model-mapping-batch-dialog'
 
@@ -246,7 +246,20 @@ test('cancelling after configuring a rule does not apply mappings', async () => 
 
 test('long translated source labels wrap inside their row without covering the model search', async () => {
   const i18n = createInstance()
-  await i18n.init({ lng: 'fr', resources: { fr }, keySeparator: false })
+  // The retired French locale provided the long labels this layout regression
+  // needs, so derive an equivalent long-string bundle from English.
+  const longLabels = {
+    translation: {
+      ...en.translation,
+      'Select models': 'Sélectionner les modèles',
+      'Search models...': 'Rechercher des modèles...',
+    },
+  }
+  await i18n.init({
+    lng: 'fr',
+    resources: { fr: longLabels },
+    keySeparator: false,
+  })
   render(
     <I18nextProvider i18n={i18n}>
       <ModelMappingBatchDialog

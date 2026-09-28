@@ -36,25 +36,6 @@ export interface TwoFAPayload {
   flow_token: string
 }
 
-export interface RegisterPayload {
-  username: string
-  password: string
-  email?: string
-  verification_code?: string
-  aff_code?: string
-  turnstile?: string
-}
-
-export interface PasswordResetPayload {
-  email: string
-  turnstile?: string
-}
-
-export interface EmailVerificationPayload {
-  email: string
-  turnstile?: string
-}
-
 export interface BindEmailPayload {
   flow_token: string
   new_code: string

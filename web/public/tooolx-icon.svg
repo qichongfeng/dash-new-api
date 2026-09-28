@@ -1,0 +1,10 @@
+<svg width="100%" viewBox="0 0 340 340" role="img" xmlns="http://www.w3.org/2000/svg" style="">
+  <defs>
+    <linearGradient id="g1" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0%" stop-color="#EF9F27"/>
+      <stop offset="50%" stop-color="#1D9E75"/>
+      <stop offset="100%" stop-color="#7F77DD"/>
+    </linearGradient>
+  </defs>
+  <circle cx="170" cy="170" r="130" fill="none" stroke="url(#g1)" stroke-width="80" style="fill:none;color:rgb(255, 255, 255);stroke-width:60px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
+</svg>

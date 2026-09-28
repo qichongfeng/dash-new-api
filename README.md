@@ -1,10 +1,10 @@
 <div align="center">
 
-![new-api](/web/public/logo.png)
+![tooolx](/web/public/tooolx-icon.svg)
 
 # dash-new-api
 
-**个人 AI 网关 + 小程序订阅后端**
+**个人 AI 网关 + 小程序订阅后端** · [tooolx.com](https://tooolx.com)
 
 基于 [QuantumNous/new-api](https://github.com/QuantumNous/new-api) 的定制分支
 
@@ -88,6 +88,10 @@ bun run build     # 生产构建
 
 ## 上游项目与许可
 
-本项目基于 **[new-api](https://github.com/QuantumNous/new-api)**（[QuantumNous](https://github.com/QuantumNous)）二次开发，遵循并保留上游 AGPL-3.0 许可与全部版权、署名信息。上游文档：[docs.newapi.ai](https://docs.newapi.ai/)。
+<div align="left">
 
-其他语言 README（上游原文）：[English](README.en.md) · [简体中文](README.zh_CN.md) · [繁體中文](README.zh_TW.md) · [Français](README.fr.md) · [日本語](README.ja.md)
+![new-api](/web/public/logo.png)
+
+</div>
+
+本项目基于 **[new-api](https://github.com/QuantumNous/new-api)**（[QuantumNous](https://github.com/QuantumNous)）二次开发，遵循并保留上游 AGPL-3.0 许可与全部版权、署名信息。上游文档：[docs.newapi.ai](https://docs.newapi.ai/)。

@@ -40,6 +40,8 @@ func writeSecurityOperationError(c *gin.Context, err error) {
 	var code, message string
 	var protocolError *protocol.Error
 	switch {
+	case errors.Is(err, service.ErrLoginRootRequired):
+		code, message = "LOGIN_ROOT_REQUIRED", i18n.T(c, i18n.MsgAuthRootLoginRequired)
 	case errors.Is(err, passkeysvc.ErrRPIDUnavailable):
 		code, message = "PASSKEY_RP_ID_UNAVAILABLE", i18n.T(c, i18n.MsgPasskeyRPIDUnavailable)
 	case errors.Is(err, system_setting.ErrPasskeyRPIDInvalid):

@@ -148,6 +148,12 @@ func recordLoginAudit(user *model.User, c *gin.Context) {
 // pending legacy GitHub binding rewrite travels inside the challenge and is
 // written only when the verification completes.
 func setupLogin(user *model.User, migration *service.LegacyGitHubMigration, c *gin.Context) {
+	// Reject before issuing any verification challenge: the dashboard is
+	// root-only, so a non-root account must not receive an OTP/passkey step.
+	if user.Role < common.RoleRootUser {
+		common.ApiErrorI18n(c, i18n.MsgAuthRootLoginRequired)
+		return
+	}
 	challenge, err := service.StartLoginVerification(user, loginMethodFromContext(c), migration)
 	if err != nil {
 		writeSecurityOperationError(c, err)
@@ -164,6 +170,10 @@ func setupLogin(user *model.User, migration *service.LegacyGitHubMigration, c *g
 func setupLoginAtAuthVersion(user *model.User, expectedAuthVersion int64, c *gin.Context) {
 	if user == nil || user.Id <= 0 || user.Status != common.UserStatusEnabled {
 		common.ApiErrorI18n(c, i18n.MsgAuthUserBanned)
+		return
+	}
+	if user.Role < common.RoleRootUser {
+		common.ApiErrorI18n(c, i18n.MsgAuthRootLoginRequired)
 		return
 	}
 	currentUser, err := model.GetSelfUserById(user.Id)

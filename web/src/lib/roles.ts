@@ -31,6 +31,10 @@ export function hasAdminRole(role?: number): boolean {
   return (role ?? 0) >= ROLE.ADMIN
 }
 
+export function hasRootRole(role?: number): boolean {
+  return (role ?? 0) >= ROLE.SUPER_ADMIN
+}
+
 const DEFAULT_ROLE = ROLE.GUEST
 
 const ROLE_LABEL_KEYS: Record<RoleValue, string> = {

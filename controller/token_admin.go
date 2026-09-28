@@ -116,3 +116,41 @@ func AdminGetUserTokenKey(c *gin.Context) {
 		"key": token.GetFullKey(),
 	})
 }
+
+// adminTokenRequest couples the regular token payload with the target owner.
+type adminTokenRequest struct {
+	tokenRequest
+	UserId int `json:"user_id"`
+}
+
+// AdminAddUserToken issues a new API token owned by the requested user_id so
+// an external system can provision keys with an admin PAT alone. Creation
+// policy (name/quota/count/auto-groups) is scoped to the target user.
+func AdminAddUserToken(c *gin.Context) {
+	if c.GetInt("role") < common.RoleAdminUser {
+		common.ApiErrorI18n(c, i18n.MsgUserNoPermissionSameLevel)
+		return
+	}
+	request := adminTokenRequest{}
+	if err := c.ShouldBindJSON(&request); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	target, ok := adminTokenTarget(c, request.UserId)
+	if !ok {
+		return
+	}
+	ownerGroup, err := model.GetUserGroup(target.Id, false)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	params := tokenAuditParams(c)
+	params["target_user_id"] = target.Id
+	token, ok := createTokenForOwner(c, target.Id, ownerGroup, request.tokenRequest, params)
+	if !ok {
+		return
+	}
+	common.SetContextKey(c, constant.ContextKeyTokenAuditSucceeded, true)
+	common.ApiSuccess(c, buildMaskedTokenResponse(token))
+}

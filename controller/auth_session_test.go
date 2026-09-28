@@ -1,8 +1,10 @@
 package controller
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -33,7 +35,7 @@ func TestAuthLogoutRejectsRefreshCookieSessionMismatch(t *testing.T) {
 	})
 
 	user := &model.User{
-		Username: "logout-mismatch-user", Password: "unused", Role: common.RoleCommonUser,
+		Username: "logout-mismatch-user", Password: "unused", Role: common.RoleRootUser,
 		Status: common.UserStatusEnabled, Group: "default", AuthVersion: 1,
 	}
 	require.NoError(t, db.Create(user).Error)
@@ -131,7 +133,7 @@ func TestSessionLimitDoesNotRecordRejectedLoginAsSuccessful(t *testing.T) {
 
 	const previousLastLoginAt = int64(123)
 	user := &model.User{
-		Username: "rejected-login-audit-user", Password: "unused", Role: common.RoleCommonUser,
+		Username: "rejected-login-audit-user", Password: "unused", Role: common.RoleRootUser,
 		Status: common.UserStatusEnabled, Group: "default", AuthVersion: 1, LastLoginAt: previousLastLoginAt,
 	}
 	require.NoError(t, db.Create(user).Error)
@@ -152,4 +154,85 @@ func TestSessionLimitDoesNotRecordRejectedLoginAsSuccessful(t *testing.T) {
 	var stored model.User
 	require.NoError(t, db.First(&stored, user.Id).Error)
 	assert.Equal(t, previousLastLoginAt, stored.LastLoginAt)
+}
+
+// TestLoginRestrictedToRoot covers the root-only dashboard sign-in policy: the
+// password login handler must reject common and admin accounts while root
+// still signs in.
+func TestLoginRestrictedToRoot(t *testing.T) {
+	_, _ = setupSecurityEnrollmentTest(t)
+	passwordHash := func() string {
+		hashed, err := common.Password2Hash("policy-password")
+		require.NoError(t, err)
+		return hashed
+	}
+	seed := func(username string, role int) {
+		require.NoError(t, model.DB.Create(&model.User{
+			Username: username, Password: passwordHash(), Role: role,
+			Status: common.UserStatusEnabled, Group: "default", AffCode: username, AuthVersion: 1,
+		}).Error)
+	}
+	seed("policy-common", common.RoleCommonUser)
+	seed("policy-admin", common.RoleAdminUser)
+
+	login := func(username, password string) (bool, string) {
+		recorder := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(recorder)
+		body := fmt.Sprintf(`{"username":%q,"password":%q}`, username, password)
+		c.Request = httptest.NewRequest(http.MethodPost, "/api/user/login", strings.NewReader(body))
+		c.Request.Header.Set("Content-Type", "application/json")
+		Login(c)
+		var response struct {
+			Success bool   `json:"success"`
+			Message string `json:"message"`
+		}
+		require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+		return response.Success, response.Message
+	}
+
+	for _, username := range []string{"policy-common", "policy-admin"} {
+		success, message := login(username, "policy-password")
+		assert.False(t, success, "%s must not sign in (got %q)", username, message)
+	}
+
+	// The shared fixture account is root and must still sign in.
+	success, message := login("enrollment-user", "enrollment-password")
+	assert.True(t, success, message)
+}
+
+// TestRefreshRevokesNonRootSession covers the session-side gate: a non-root
+// account that somehow holds a session cannot refresh it and the session is
+// revoked.
+func TestRefreshRevokesNonRootSession(t *testing.T) {
+	previousDB, previousLogDB := model.DB, model.LOG_DB
+	previousRedis, previousSecret := common.RedisEnabled, common.SessionSecret
+	t.Cleanup(func() {
+		model.DB, model.LOG_DB = previousDB, previousLogDB
+		common.RedisEnabled = previousRedis
+		common.SessionSecret = previousSecret
+	})
+	common.RedisEnabled = false
+	common.SessionSecret = "root-only-refresh-test-secret"
+
+	db, err := gorm.Open(sqlite.Open("file:root_only_refresh?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	sqlDB, _ := db.DB()
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	require.NoError(t, db.AutoMigrate(&model.User{}, &model.UserSession{}))
+	model.DB = db
+
+	user := &model.User{
+		Username: "stale-common", Password: "unused", Role: common.RoleCommonUser,
+		Status: common.UserStatusEnabled, Group: "default", AffCode: "stale-common", AuthVersion: 1,
+	}
+	require.NoError(t, db.Create(user).Error)
+	bundle, err := service.CreateLoginSession(user.Id, "password", "127.0.0.1", "agent")
+	require.NoError(t, err)
+
+	_, _, err = service.RefreshLoginSession(bundle.RefreshToken, bundle.Session.SID, "127.0.0.1", "agent")
+	require.ErrorIs(t, err, service.ErrLoginSessionRevoked)
+
+	stored, err := model.GetUserSessionBySID(bundle.Session.SID)
+	require.NoError(t, err)
+	assert.NotEqual(t, model.UserSessionStatusActive, stored.Status, "the non-root session must be revoked")
 }

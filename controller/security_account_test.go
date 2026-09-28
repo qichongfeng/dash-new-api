@@ -36,6 +36,10 @@ func TestSecurityAccountDeletionRequiresScopedProof(t *testing.T) {
 	for _, scenario := range []string{"missing", "wrong scope", "expired", "consumed", "other session", "other account", "password disabled", "factor added"} {
 		t.Run(scenario, func(t *testing.T) {
 			user, identity := setupSecurityEnrollmentTest(t)
+			// The shared fixture creates a root account, which cannot self-delete;
+			// account-deletion flows exercise a common user.
+			require.NoError(t, model.DB.Model(&model.User{}).Where("id = ?", user.Id).Update("role", common.RoleCommonUser).Error)
+			require.NoError(t, model.PublishUserAuthCache(user.Id))
 			originalIdentity := identity
 			operation := service.VerificationOperation{Scope: service.VerificationScopeAccountDelete}
 			proof := ""
@@ -92,6 +96,10 @@ func TestSecurityAccountDeletionAcceptsEitherFactorAndRevokesSessions(t *testing
 	for _, method := range []string{"password", "oauth", "2fa", "passkey"} {
 		t.Run(method, func(t *testing.T) {
 			user, identity := setupSecurityEnrollmentTest(t)
+			// The shared fixture creates a root account, which cannot self-delete;
+			// account-deletion flows exercise a common user.
+			require.NoError(t, model.DB.Model(&model.User{}).Where("id = ?", user.Id).Update("role", common.RoleCommonUser).Error)
+			require.NoError(t, model.PublishUserAuthCache(user.Id))
 			if method == "oauth" {
 				require.NoError(t, model.DB.Model(user).Updates(map[string]any{"password": "", "github_id": "linked-user"}).Error)
 				oauth.Register("account-delete-oauth", &enrollmentOAuthProvider{externalID: "linked-user"})
@@ -166,6 +174,10 @@ func TestSecurityAccountDeletionRechecksTransactionAndConsumesFailedProof(t *tes
 	for _, scenario := range []string{"revoked session", "auth version", "root", "write failure"} {
 		t.Run(scenario, func(t *testing.T) {
 			user, identity := setupSecurityEnrollmentTest(t)
+			// The shared fixture creates a root account, which cannot self-delete;
+			// account-deletion flows exercise a common user.
+			require.NoError(t, model.DB.Model(&model.User{}).Where("id = ?", user.Id).Update("role", common.RoleCommonUser).Error)
+			require.NoError(t, model.PublishUserAuthCache(user.Id))
 			operation := service.VerificationOperation{Scope: service.VerificationScopeAccountDelete}
 			proof := issueSecurityEnrollmentProof(t, identity, operation, "password")
 			if scenario != "write failure" {
@@ -209,6 +221,10 @@ func TestSecurityAccountDeletionRechecksTransactionAndConsumesFailedProof(t *tes
 
 func TestSecurityAccountDeletionConcurrentRequestsHaveOneWinner(t *testing.T) {
 	user, identity := setupSecurityEnrollmentTest(t)
+	// The shared fixture creates a root account, which cannot self-delete;
+	// account-deletion flows exercise a common user.
+	require.NoError(t, model.DB.Model(&model.User{}).Where("id = ?", user.Id).Update("role", common.RoleCommonUser).Error)
+	require.NoError(t, model.PublishUserAuthCache(user.Id))
 	proof := issueSecurityEnrollmentProof(t, identity, service.VerificationOperation{Scope: service.VerificationScopeAccountDelete}, "password")
 	start := make(chan struct{})
 	responses := make(chan string, 2)

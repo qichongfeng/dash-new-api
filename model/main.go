@@ -40,6 +40,12 @@ func jsonScanBytes(value any) []byte {
 	}
 }
 
+// InitColumnQuoting re-derives the dialect-specific column quoting. Exported
+// for tests that switch the configured database type without running InitDB.
+func InitColumnQuoting() {
+	initCol()
+}
+
 func initCol() {
 	// init common column names
 	if common.UsingMainDatabase(common.DatabaseTypePostgreSQL) {

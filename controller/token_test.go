@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -897,6 +898,9 @@ func setupAdminTokenControllerTest(t *testing.T) *gorm.DB {
 	t.Helper()
 
 	db := openTokenControllerTestDB(t)
+	// openTokenControllerTestDB sets the database types directly, which skips
+	// InitDB's dialect-specific column quoting used by GetUserGroup.
+	model.InitColumnQuoting()
 	if err := db.AutoMigrate(&model.Token{}, &model.User{}); err != nil {
 		t.Fatalf("failed to migrate token admin tables: %v", err)
 	}
@@ -1016,4 +1020,65 @@ func TestAdminTokenHandlersEnforceTargetRoleAndStatus(t *testing.T) {
 	AdminGetUserTokens(disabledCtx)
 	assert.False(t, decodeAPIResponse(t, disabledRecorder).Success)
 	_ = disabledToken
+}
+
+func TestAdminAddUserTokenCreatesForTargetUser(t *testing.T) {
+	db := setupAdminTokenControllerTest(t)
+	target := seedAdminTokenUser(t, db, "target-user", common.RoleCommonUser, common.UserStatusEnabled)
+
+	ctx, recorder := newAdminTokenContext(t, http.MethodPost, "/api/token/admin/", 1, common.RoleRootUser)
+	body := map[string]any{
+		"user_id":         target.Id,
+		"name":            "issued-by-admin",
+		"expired_time":    -1,
+		"unlimited_quota": true,
+		"remain_quota":    100000,
+	}
+	payload, err := common.Marshal(body)
+	require.NoError(t, err)
+	ctx.Request.Body = io.NopCloser(bytes.NewReader(payload))
+	ctx.Request.Header.Set("Content-Type", "application/json")
+	AdminAddUserToken(ctx)
+
+	response := decodeAPIResponse(t, recorder)
+	require.True(t, response.Success, "message: %s", response.Message)
+	var created tokenResponseItem
+	require.NoError(t, common.Unmarshal(response.Data, &created))
+	assert.Equal(t, "issued-by-admin", created.Name)
+	assert.NotEqual(t, "", created.Key, "creation returns the masked key shape")
+
+	var stored model.Token
+	require.NoError(t, db.Where("name = ?", "issued-by-admin").First(&stored).Error)
+	assert.Equal(t, target.Id, stored.UserId, "the token must be owned by the target user")
+	assert.NotEmpty(t, stored.Key)
+	assert.NotEqual(t, created.Key, stored.Key, "the response key must stay masked")
+}
+
+func TestAdminAddUserTokenRejectsInvalidTargets(t *testing.T) {
+	db := setupAdminTokenControllerTest(t)
+	adminTarget := seedAdminTokenUser(t, db, "admin-target", common.RoleAdminUser, common.UserStatusEnabled)
+	disabledTarget := seedAdminTokenUser(t, db, "disabled-user", common.RoleCommonUser, common.UserStatusDisabled)
+
+	doAdd := func(callerID, callerRole, targetID int) bool {
+		ctx, recorder := newAdminTokenContext(t, http.MethodPost, "/api/token/admin/", callerID, callerRole)
+		body := map[string]any{"user_id": targetID, "name": "should-not-exist", "expired_time": -1, "unlimited_quota": true}
+		payload, err := common.Marshal(body)
+		require.NoError(t, err)
+		ctx.Request.Body = io.NopCloser(bytes.NewReader(payload))
+		ctx.Request.Header.Set("Content-Type", "application/json")
+		AdminAddUserToken(ctx)
+		return decodeAPIResponse(t, recorder).Success
+	}
+
+	// Equal-role target rejected for an admin caller, allowed for root.
+	assert.False(t, doAdd(2, common.RoleAdminUser, adminTarget.Id))
+	assert.True(t, doAdd(1, common.RoleRootUser, adminTarget.Id))
+	// Disabled target rejected outright.
+	assert.False(t, doAdd(1, common.RoleRootUser, disabledTarget.Id))
+	// Non-admin caller rejected (simulated middleware bypass).
+	assert.False(t, doAdd(3, common.RoleCommonUser, adminTarget.Id))
+
+	var count int64
+	require.NoError(t, db.Model(&model.Token{}).Where("name = ?", "should-not-exist").Count(&count).Error)
+	assert.EqualValues(t, 1, count, "only the root caller's token may exist")
 }

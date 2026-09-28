@@ -291,6 +291,7 @@ func SetApiRouter(router *gin.Engine) {
 		adminTokenRoute.Use(middleware.TokenOperationAudit())
 		{
 			adminTokenRoute.GET("/", controller.AdminGetUserTokens)
+			adminTokenRoute.POST("/", controller.AdminAddUserToken)
 			adminTokenRoute.POST("/:id/key", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.AdminGetUserTokenKey)
 		}
 

@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { describe, expect, test } from 'vitest'
 
-import { ROLE, hasAdminRole } from '../roles'
+import { ROLE, hasAdminRole, hasRootRole } from '../roles'
 
 describe('hasAdminRole', () => {
   test.each([undefined, ROLE.GUEST, ROLE.USER, 9])(
@@ -34,4 +34,17 @@ describe('hasAdminRole', () => {
       expect(hasAdminRole(role)).toBe(true)
     }
   )
+})
+
+describe('hasRootRole', () => {
+  test.each([undefined, ROLE.GUEST, ROLE.USER, ROLE.ADMIN, 99])(
+    'treats role %s as non-root',
+    (role) => {
+      expect(hasRootRole(role)).toBe(false)
+    }
+  )
+
+  test('treats role 100 as root', () => {
+    expect(hasRootRole(ROLE.SUPER_ADMIN)).toBe(true)
+  })
 })

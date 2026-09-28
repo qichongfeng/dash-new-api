@@ -25,7 +25,7 @@ import {
   clearAuthentication,
   resolveAuthentication,
 } from '@/lib/auth-session'
-import { hasAdminRole } from '@/lib/roles'
+import { hasRootRole } from '@/lib/roles'
 import { useAuthStore } from '@/stores/auth-store'
 
 export const Route = createFileRoute('/_authenticated')({
@@ -38,12 +38,12 @@ export const Route = createFileRoute('/_authenticated')({
 
     const { auth } = useAuthStore.getState()
 
-    // The dashboard is admin-only. Clear the client session so the sign-in
-    // page does not bounce an authenticated non-admin back into this guard.
-    if (!auth.user || !auth.accessToken || !hasAdminRole(auth.user.role)) {
+    // The dashboard is root-only. Clear the client session so the sign-in
+    // page does not bounce an authenticated non-root user back into this guard.
+    if (!auth.user || !auth.accessToken || !hasRootRole(auth.user.role)) {
       if (auth.user) {
         clearAuthentication(false)
-        toast.error(t('Sign-in is restricted to administrators'))
+        toast.error(t('Sign-in is restricted to the root administrator'))
         throw redirect({ to: '/sign-in' })
       }
       throw redirect({

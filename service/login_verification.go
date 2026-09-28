@@ -151,6 +151,11 @@ func CompleteLoginVerification(token string, verification *LoginVerification, me
 	if verification == nil || verification.Flow == nil || verification.State == nil {
 		return nil, nil, model.ErrAuthFlowInvalid
 	}
+	// The dashboard is root-only; a non-root account must not complete a 2FA /
+	// passkey challenge into a session even if the flow token was issued.
+	if verification.State.Role < common.RoleRootUser {
+		return nil, nil, ErrLoginRootRequired
+	}
 	session, refreshSecret, err := newLoginSession(verification.State.UserID, verification.payload.AuthVersion, verification.payload.LoginMethod, ip, userAgent)
 	if err != nil {
 		return nil, nil, err

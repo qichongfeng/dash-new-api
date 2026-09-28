@@ -414,7 +414,7 @@ func TestSecurityLoginPasskeyCannotCompleteAnotherChallenge(t *testing.T) {
 			require.NoError(t, err)
 			passkeyToken, challenge := beginSecurityLoginPasskey(t, first.FlowToken)
 			if otherUser {
-				user = &model.User{Username: "other-login", Role: common.RoleCommonUser, Status: common.UserStatusEnabled, Group: "default", AffCode: "other-login", AuthVersion: 1}
+				user = &model.User{Username: "other-login", Role: common.RoleRootUser, Status: common.UserStatusEnabled, Group: "default", AffCode: "other-login", AuthVersion: 1}
 				require.NoError(t, model.DB.Create(user).Error)
 				newSecurityLoginPasskey(t, user.Id)
 			}
@@ -900,9 +900,9 @@ func TestOAuthLoginLegacyGitHubBindingRequiresAccountEvidence(t *testing.T) {
 		expectEmailCalls  int
 		expectAuditParams string
 	}{
-		{name: "numeric legacy value registers a new account", existingGitHubID: "424242", legacyID: "424242", verifiedEmails: []string{"legacy-github@example.com"}, registerEnabled: true, expectLogin: true, expectNewAccount: true},
+		{name: "numeric legacy value registers a new account", existingGitHubID: "424242", legacyID: "424242", verifiedEmails: []string{"legacy-github@example.com"}, registerEnabled: true, expectLogin: false, expectNewAccount: true},
 		{name: "numeric legacy value with registration disabled", existingGitHubID: "424242", legacyID: "424242", verifiedEmails: []string{"legacy-github@example.com"}},
-		{name: "soft-deleted legacy row registers a new account", existingGitHubID: "octocat-legacy", existingDeleted: true, legacyID: "octocat-legacy", verifiedEmails: []string{"legacy-github@example.com"}, registerEnabled: true, expectLogin: true, expectNewAccount: true},
+		{name: "soft-deleted legacy row registers a new account", existingGitHubID: "octocat-legacy", existingDeleted: true, legacyID: "octocat-legacy", verifiedEmails: []string{"legacy-github@example.com"}, registerEnabled: true, expectLogin: false, expectNewAccount: true},
 		{
 			name: "verified email match migrates", existingGitHubID: "octocat-legacy", legacyID: "octocat-legacy",
 			verifiedEmails: []string{"other@example.com", " Legacy-GitHub@Example.com "}, expectLogin: true, expectMigration: true, expectEmailCalls: 1,
@@ -931,7 +931,7 @@ func TestOAuthLoginLegacyGitHubBindingRequiresAccountEvidence(t *testing.T) {
 			previousRegister := common.RegisterEnabled
 			common.RegisterEnabled = test.registerEnabled
 			t.Cleanup(func() { common.RegisterEnabled = previousRegister })
-			existing := &model.User{Username: "legacy-github", Email: "legacy-github@example.com", Role: common.RoleCommonUser, Status: common.UserStatusEnabled, Group: "default", AffCode: "legacy-github", AuthVersion: 1, GitHubId: test.existingGitHubID}
+			existing := &model.User{Username: "legacy-github", Email: "legacy-github@example.com", Role: common.RoleRootUser, Status: common.UserStatusEnabled, Group: "default", AffCode: "legacy-github", AuthVersion: 1, GitHubId: test.existingGitHubID}
 			if test.withoutEmail {
 				existing.Email = ""
 			}
@@ -962,7 +962,7 @@ func TestOAuthLoginLegacyGitHubBindingRequiresAccountEvidence(t *testing.T) {
 			} else {
 				require.Len(t, audits, 1)
 				assert.Equal(t, existing.Id, audits[0].UserId)
-				assert.Equal(t, common.RoleCommonUser, audits[0].ActorRole)
+				assert.Equal(t, common.RoleRootUser, audits[0].ActorRole)
 				assert.Equal(t, test.expectMigration, audits[0].Success)
 				assert.JSONEq(t, test.expectAuditParams, params[0])
 			}
@@ -977,7 +977,8 @@ func TestOAuthLoginLegacyGitHubBindingRequiresAccountEvidence(t *testing.T) {
 				var created model.User
 				require.NoError(t, model.DB.Where("github_id = ?", "900001").First(&created).Error)
 				assert.NotEqual(t, existing.Id, created.Id)
-				assert.Equal(t, created.Id, result.Data.User.Id)
+				assert.Equal(t, common.RoleCommonUser, created.Role)
+				assert.Empty(t, response.Header().Values("Set-Cookie"), "root-only policy must not issue a session for the auto-registered account")
 				return
 			}
 			assert.Empty(t, response.Header().Values("Set-Cookie"))
@@ -992,7 +993,7 @@ func TestOAuthLoginLegacyGitHubBindingMigratesAfterLoginVerification(t *testing.
 	for _, interference := range []string{"none", "pending id claimed by another account", "binding relinked meanwhile"} {
 		t.Run(interference, func(t *testing.T) {
 			setupSecurityEnrollmentTest(t)
-			existing := &model.User{Username: "legacy-github", Email: "legacy-github@example.com", Role: common.RoleCommonUser, Status: common.UserStatusEnabled, Group: "default", AffCode: "legacy-github", AuthVersion: 1, GitHubId: "octocat-legacy"}
+			existing := &model.User{Username: "legacy-github", Email: "legacy-github@example.com", Role: common.RoleRootUser, Status: common.UserStatusEnabled, Group: "default", AffCode: "legacy-github", AuthVersion: 1, GitHubId: "octocat-legacy"}
 			require.NoError(t, model.DB.Create(existing).Error)
 			factor := &model.TwoFA{UserId: existing.Id, Secret: "JBSWY3DPEHPK3PXP", IsEnabled: true}
 			require.NoError(t, model.DB.Create(factor).Error)
@@ -1017,7 +1018,7 @@ func TestOAuthLoginLegacyGitHubBindingMigratesAfterLoginVerification(t *testing.
 			expectedGitHubID, expectLogin := "900001", true
 			switch interference {
 			case "pending id claimed by another account":
-				other := &model.User{Username: "other-github", Role: common.RoleCommonUser, Status: common.UserStatusEnabled, Group: "default", AffCode: "other-github", AuthVersion: 1, GitHubId: "900001"}
+				other := &model.User{Username: "other-github", Role: common.RoleRootUser, Status: common.UserStatusEnabled, Group: "default", AffCode: "other-github", AuthVersion: 1, GitHubId: "900001"}
 				require.NoError(t, model.DB.Create(other).Error)
 				expectedGitHubID, expectLogin = "octocat-legacy", false
 			case "binding relinked meanwhile":
@@ -1058,7 +1059,7 @@ func TestOAuthLoginLegacyGitHubBindingMigratesAfterLoginVerification(t *testing.
 			}
 			require.Len(t, audits, 1)
 			assert.Equal(t, existing.Id, audits[0].UserId)
-			assert.Equal(t, common.RoleCommonUser, audits[0].ActorRole)
+			assert.Equal(t, common.RoleRootUser, audits[0].ActorRole)
 			assert.True(t, audits[0].Success)
 			// No SMTP server is configured in tests, so the notification attempt is recorded as failed.
 			assert.JSONEq(t, `{"provider":"github","legacy_migration":true,"legacy_id":"octocat-legacy","provider_user_id":"900001","verification_method":"2fa","success":true,"notification_failed":true}`, params[0])
@@ -1085,7 +1086,7 @@ func TestOAuthBindIgnoresLegacyGitHubUsernames(t *testing.T) {
 			if test.ownGitHubID != "" {
 				require.NoError(t, model.DB.Model(user).Update("github_id", test.ownGitHubID).Error)
 			}
-			other := &model.User{Username: "other-github", Role: common.RoleCommonUser, Status: common.UserStatusEnabled, Group: "default", AffCode: "other-github", AuthVersion: 1, GitHubId: test.otherGitHubID}
+			other := &model.User{Username: "other-github", Role: common.RoleRootUser, Status: common.UserStatusEnabled, Group: "default", AffCode: "other-github", AuthVersion: 1, GitHubId: test.otherGitHubID}
 			require.NoError(t, model.DB.Create(other).Error)
 			const slug = "github-legacy-bind-test"
 			oauth.Register(slug, &legacyGitHubOAuthProvider{providerUserID: "900001", legacyID: test.legacyID})

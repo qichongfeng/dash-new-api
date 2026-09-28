@@ -51,9 +51,11 @@ func setupAuthSessionTestDB(t *testing.T) *model.User {
 		_ = sqlDB.Close()
 	})
 	user := &model.User{
-		Username:    "session-user",
-		Password:    "unused-password-hash",
-		Role:        common.RoleCommonUser,
+		Username: "session-user",
+		Password: "unused-password-hash",
+		// Session machinery tests; non-root refresh rejection is covered by
+		// TestRefreshRevokesNonRootSession in the controller package.
+		Role:        common.RoleRootUser,
 		Status:      common.UserStatusEnabled,
 		Group:       "default",
 		AuthVersion: 1,

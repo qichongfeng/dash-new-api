@@ -28,6 +28,9 @@ var (
 	ErrLoginSessionMismatch = errors.New("login session does not match the expected session")
 	ErrRefreshTokenInvalid  = errors.New("refresh token is invalid")
 	ErrRefreshRace          = errors.New("refresh token was already rotated")
+	// ErrLoginRootRequired marks a sign-in attempt by an account below the
+	// root role; the dashboard of this deployment is root-only.
+	ErrLoginRootRequired = errors.New("root account required for dashboard sign-in")
 )
 
 type LoginSessionView struct {
@@ -245,6 +248,10 @@ func RefreshLoginSession(rawRefreshToken, expectedSID, ip, userAgent string) (*A
 		_, _ = model.RevokeUserSession(session.UserID, session.SID, "user_security_changed")
 		return nil, nil, ErrLoginSessionRevoked
 	}
+	if currentUser.Role < common.RoleRootUser {
+		_, _ = model.RevokeUserSession(session.UserID, session.SID, "root_login_required")
+		return nil, nil, ErrLoginSessionRevoked
+	}
 	nextSecret := deriveNextRefreshSecret(sid, secret)
 	rotated, err := model.RotateUserSessionRefresh(session.UserID, sid, hashRefreshSecret(secret), hashRefreshSecret(nextSecret), time.Now().Unix(), RefreshReplayWindow)
 	if err != nil {
@@ -445,6 +452,8 @@ func truncateAuthMetadata(value string, max int) string {
 
 func authSessionErrorCode(err error) (int, string) {
 	switch {
+	case errors.Is(err, ErrLoginRootRequired):
+		return http.StatusForbidden, "AUTH_ROOT_REQUIRED"
 	case errors.Is(err, model.ErrUserSessionLimit):
 		return http.StatusConflict, "AUTH_SESSION_LIMIT"
 	case errors.Is(err, model.ErrUserSessionIssuanceLimit):

@@ -87,7 +87,10 @@ func getTokenRequestUserGroup(c *gin.Context) (string, error) {
 	return model.GetUserGroup(c.GetInt("id"), false)
 }
 
-func setTokenAutoGroups(c *gin.Context, token *model.Token, groups []string) bool {
+// setTokenAutoGroups validates auto-group selection against the token owner's
+// group. ownerGroup belongs to the user who will own the token, which is the
+// caller for self-service and the target user for admin issuance.
+func setTokenAutoGroups(c *gin.Context, token *model.Token, groups []string, ownerGroup string) bool {
 	if len(groups) == 0 {
 		if err := token.SetAutoGroups(nil); err != nil {
 			common.ApiError(c, err)
@@ -102,11 +105,6 @@ func setTokenAutoGroups(c *gin.Context, token *model.Token, groups []string) boo
 		return false
 	}
 
-	userGroup, err := getTokenRequestUserGroup(c)
-	if err != nil {
-		common.ApiError(c, err)
-		return false
-	}
 	seen := make(map[string]struct{}, len(groups))
 	for _, group := range groups {
 		if _, ok := seen[group]; ok {
@@ -114,7 +112,7 @@ func setTokenAutoGroups(c *gin.Context, token *model.Token, groups []string) boo
 			return false
 		}
 		seen[group] = struct{}{}
-		if !service.IsUserSelectableGroup(userGroup, group) {
+		if !service.IsUserSelectableGroup(ownerGroup, group) {
 			common.ApiErrorI18n(c, i18n.MsgTokenAutoGroupsInvalid, map[string]any{"Group": group})
 			return false
 		}
@@ -275,49 +273,47 @@ func GetTokenUsage(c *gin.Context) {
 	})
 }
 
-func AddToken(c *gin.Context) {
-	request := tokenRequest{}
-	err := c.ShouldBindJSON(&request)
-	if err != nil {
-		common.ApiError(c, err)
-		return
-	}
+// createTokenForOwner runs the shared token-creation policy for the user who
+// will own the token (the caller for self-service, the target user for admin
+// issuance): name/quota validation, per-owner token count limit, auto-group
+// validation against the owner's group, key generation, and insert. It writes
+// the error response and returns ok=false on rejection.
+func createTokenForOwner(c *gin.Context, ownerID int, ownerGroup string, request tokenRequest, params model.AuditFields) (*model.Token, bool) {
 	token := request.Token
 	if len(token.Name) > 50 {
 		common.ApiErrorI18n(c, i18n.MsgTokenNameTooLong)
-		return
+		return nil, false
 	}
-	params := tokenAuditParams(c)
 	params["name"] = token.Name
 	// 非无限额度时，检查额度值是否超出有效范围
 	if !token.UnlimitedQuota {
 		if token.RemainQuota < 0 {
 			common.ApiErrorI18n(c, i18n.MsgTokenQuotaNegative)
-			return
+			return nil, false
 		}
 		maxQuotaValue := maxTokenQuota()
 		if token.RemainQuota > maxQuotaValue {
 			common.ApiErrorI18n(c, i18n.MsgTokenQuotaExceedMax, map[string]any{"Max": maxQuotaValue})
-			return
+			return nil, false
 		}
 	}
 	// 检查用户令牌数量是否已达上限
 	maxTokens := operation_setting.GetMaxUserTokens()
-	count, err := model.CountUserTokens(c.GetInt("id"))
+	count, err := model.CountUserTokens(ownerID)
 	if err != nil {
 		common.ApiError(c, err)
-		return
+		return nil, false
 	}
 	if int(count) >= maxTokens {
 		c.JSON(http.StatusOK, gin.H{
 			"success": false,
 			"message": fmt.Sprintf("已达到最大令牌数量限制 (%d)", maxTokens),
 		})
-		return
+		return nil, false
 	}
 	if token.Group == "auto" {
-		if !setTokenAutoGroups(c, &token, request.AutoGroups.Groups) {
-			return
+		if !setTokenAutoGroups(c, &token, request.AutoGroups.Groups, ownerGroup) {
+			return nil, false
 		}
 	} else {
 		token.CrossGroupRetry = false
@@ -327,10 +323,10 @@ func AddToken(c *gin.Context) {
 	if err != nil {
 		common.ApiErrorI18n(c, i18n.MsgTokenGenerateFailed)
 		common.SysLog("failed to generate token key: " + err.Error())
-		return
+		return nil, false
 	}
 	cleanToken := model.Token{
-		UserId:             c.GetInt("id"),
+		UserId:             ownerID,
 		Name:               token.Name,
 		Key:                key,
 		CreatedTime:        common.GetTimestamp(),
@@ -345,12 +341,30 @@ func AddToken(c *gin.Context) {
 		CrossGroupRetry:    token.CrossGroupRetry,
 		AutoGroups:         token.AutoGroups,
 	}
-	err = cleanToken.Insert()
+	if err := cleanToken.Insert(); err != nil {
+		common.ApiError(c, err)
+		return nil, false
+	}
+	params["id"] = cleanToken.Id
+	return &cleanToken, true
+}
+
+func AddToken(c *gin.Context) {
+	request := tokenRequest{}
+	err := c.ShouldBindJSON(&request)
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
-	params["id"] = cleanToken.Id
+	ownerGroup, err := getTokenRequestUserGroup(c)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	params := tokenAuditParams(c)
+	if _, ok := createTokenForOwner(c, c.GetInt("id"), ownerGroup, request, params); !ok {
+		return
+	}
 	common.SetContextKey(c, constant.ContextKeyTokenAuditSucceeded, true)
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
@@ -443,7 +457,12 @@ func UpdateToken(c *gin.Context) {
 			cleanToken.CrossGroupRetry = false
 			_ = cleanToken.SetAutoGroups(nil)
 		} else if request.AutoGroups.Set {
-			if !setTokenAutoGroups(c, cleanToken, request.AutoGroups.Groups) {
+			ownerGroup, err := getTokenRequestUserGroup(c)
+			if err != nil {
+				common.ApiError(c, err)
+				return
+			}
+			if !setTokenAutoGroups(c, cleanToken, request.AutoGroups.Groups, ownerGroup) {
 				return
 			}
 		}

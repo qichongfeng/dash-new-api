@@ -92,7 +92,7 @@ func setupSecurityEnrollmentTest(t *testing.T) (*model.User, service.AuthIdentit
 	})
 	password, err := common.Password2Hash("enrollment-password")
 	require.NoError(t, err)
-	user := &model.User{Username: "enrollment-user", Password: password, Role: common.RoleCommonUser, Status: common.UserStatusEnabled, Group: "default", AuthVersion: 1}
+	user := &model.User{Username: "enrollment-user", Password: password, Role: common.RoleRootUser, Status: common.UserStatusEnabled, Group: "default", AuthVersion: 1}
 	require.NoError(t, db.Create(user).Error)
 	require.NoError(t, model.PublishUserAuthCache(user.Id))
 	bundle, err := service.CreateLoginSession(user.Id, "password", "127.0.0.1", "enrollment-test")

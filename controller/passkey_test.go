@@ -519,6 +519,10 @@ func TestPasskeyRegistrationAndDomainRemovalSerialize(t *testing.T) {
 
 func TestPasskeyDomainEndpointRequiresRoot(t *testing.T) {
 	user, _ := setupSecurityEnrollmentTest(t)
+	// This test drives RootAuth with a NON-root bearer; the shared fixture
+	// creates a root account, so demote it first.
+	require.NoError(t, model.DB.Model(&model.User{}).Where("id = ?", user.Id).Update("role", common.RoleCommonUser).Error)
+	require.NoError(t, model.PublishUserAuthCache(user.Id))
 	setupPasskeyDomainOptions(t)
 	bundle, err := service.CreateLoginSession(user.Id, "password", "127.0.0.1", "domain-settings-test")
 	require.NoError(t, err)

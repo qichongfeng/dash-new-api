@@ -397,6 +397,42 @@ export function SubscriptionsMutateDrawer({
                 />
               </div>
 
+              <FormField
+                control={form.control}
+                name='currency'
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('Plan Currency')}</FormLabel>
+                    <Select
+                      items={[
+                        { value: 'USD', label: 'USD' },
+                        { value: 'CNY', label: 'CNY' },
+                      ]}
+                      onValueChange={field.onChange}
+                      value={field.value}
+                    >
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent alignItemWithTrigger={false}>
+                        <SelectGroup>
+                          <SelectItem value='USD'>USD</SelectItem>
+                          <SelectItem value='CNY'>CNY</SelectItem>
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
+                    <FormDescription>
+                      {t(
+                        'WeChat mini-program virtual payment requires CNY plans priced to the exact cent.'
+                      )}
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
               <div className='grid grid-cols-1 gap-3 sm:grid-cols-2'>
                 <FormField
                   control={form.control}
@@ -819,6 +855,25 @@ export function SubscriptionsMutateDrawer({
                     </FormItem>
                   )
                 }}
+              />
+
+              <FormField
+                control={form.control}
+                name='wechat_vpay_product_id'
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>WeChat VPay Item ID</FormLabel>
+                    <FormControl>
+                      <Input {...field} placeholder='...' />
+                    </FormControl>
+                    <FormDescription>
+                      {t(
+                        'Item (道具) ID created in the WeChat MP console under 虚拟支付 → 道具管理. Requires a CNY plan; the item price must equal the plan price.'
+                      )}
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
               />
             </SideDrawerSection>
           </form>

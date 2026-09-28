@@ -174,6 +174,90 @@ func TestExpireSubscriptionOrder_RejectsMismatchedPaymentProvider(t *testing.T) 
 	assert.Equal(t, common.TopUpStatusPending, order.Status)
 }
 
+func findSubscriptionBySourceTradeNoForGuardTest(t *testing.T, tradeNo string) *UserSubscription {
+	t.Helper()
+	var sub UserSubscription
+	require.NoError(t, DB.Where("source_trade_no = ?", tradeNo).First(&sub).Error)
+	return &sub
+}
+
+func TestCompleteSubscriptionOrderRecordsSourceTradeNo(t *testing.T) {
+	truncateTables(t)
+
+	insertUserForPaymentGuardTest(t, 601, 0)
+	plan := insertSubscriptionPlanForPaymentGuardTest(t, 602)
+	insertSubscriptionOrderForPaymentGuardTest(t, "WVPGUARDTRADE1", 601, plan.Id, PaymentProviderWechatVpay)
+
+	require.NoError(t, CompleteSubscriptionOrder("WVPGUARDTRADE1", "<xml></xml>", PaymentProviderWechatVpay, PaymentMethodWechatVpay))
+
+	sub := findSubscriptionBySourceTradeNoForGuardTest(t, "WVPGUARDTRADE1")
+	assert.Equal(t, 601, sub.UserId)
+	assert.Equal(t, plan.Id, sub.PlanId)
+	assert.Equal(t, "order", sub.Source)
+	assert.Equal(t, "active", sub.Status)
+}
+
+func TestCancelUserSubscriptionByTradeNo(t *testing.T) {
+	truncateTables(t)
+
+	insertUserForPaymentGuardTest(t, 611, 0)
+	plan := insertSubscriptionPlanForPaymentGuardTest(t, 612)
+	insertSubscriptionOrderForPaymentGuardTest(t, "WVPGUARDTRADE2", 611, plan.Id, PaymentProviderWechatVpay)
+	require.NoError(t, CompleteSubscriptionOrder("WVPGUARDTRADE2", "<xml></xml>", PaymentProviderWechatVpay, PaymentMethodWechatVpay))
+
+	// An admin-bound subscription must not be touched by the refund path.
+	require.NoError(t, DB.Create(&UserSubscription{
+		UserId:    611,
+		PlanId:    plan.Id,
+		StartTime: time.Now().Unix(),
+		EndTime:   time.Now().Add(time.Hour).Unix(),
+		Status:    "active",
+		Source:    "admin",
+		CreatedAt: common.GetTimestamp(),
+		UpdatedAt: common.GetTimestamp(),
+	}).Error)
+
+	cancelledId, err := CancelUserSubscriptionByTradeNo("WVPGUARDTRADE2")
+	require.NoError(t, err)
+	assert.NotZero(t, cancelledId)
+
+	sub := findSubscriptionBySourceTradeNoForGuardTest(t, "WVPGUARDTRADE2")
+	assert.Equal(t, "cancelled", sub.Status)
+	assert.LessOrEqual(t, sub.EndTime, time.Now().Unix())
+
+	// Idempotent: no active subscription remains for that order.
+	againId, err := CancelUserSubscriptionByTradeNo("WVPGUARDTRADE2")
+	require.NoError(t, err)
+	assert.Zero(t, againId)
+
+	// Unknown trade number is a no-op, not an error.
+	missingId, err := CancelUserSubscriptionByTradeNo("WVPGUARDTRADE2X")
+	require.NoError(t, err)
+	assert.Zero(t, missingId)
+
+	// The admin-bound subscription survives.
+	var boundCount int64
+	require.NoError(t, DB.Model(&UserSubscription{}).
+		Where("user_id = ? AND source = ? AND status = ?", 611, "admin", "active").
+		Count(&boundCount).Error)
+	assert.Equal(t, int64(1), boundCount)
+}
+
+func TestCompleteSubscriptionOrder_RejectsRefundedOrder(t *testing.T) {
+	truncateTables(t)
+
+	insertUserForPaymentGuardTest(t, 621, 0)
+	plan := insertSubscriptionPlanForPaymentGuardTest(t, 622)
+	insertSubscriptionOrderForPaymentGuardTest(t, "WVPGUARDTRADE3", 621, plan.Id, PaymentProviderWechatVpay)
+	require.NoError(t, DB.Model(&SubscriptionOrder{}).
+		Where("trade_no = ?", "WVPGUARDTRADE3").
+		Update("status", common.TopUpStatusRefunded).Error)
+
+	err := CompleteSubscriptionOrder("WVPGUARDTRADE3", "<xml></xml>", PaymentProviderWechatVpay, PaymentMethodWechatVpay)
+	require.ErrorIs(t, err, ErrSubscriptionOrderStatusInvalid)
+	assert.Zero(t, countUserSubscriptionsForPaymentGuardTest(t, 621))
+}
+
 func createEpayTestOrder(t *testing.T, userId int, tradeNo string, provider string, status string) TopUp {
 	t.Helper()
 	topUp := TopUp{

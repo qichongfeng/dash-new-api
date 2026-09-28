@@ -6769,6 +6769,27 @@
     "Zhipu": "Zhipu",
     "Zhipu GLM": "Zhipu GLM",
     "Zhipu V4": "Zhipu V4",
-    "Zoom": "Zoom"
+    "Zoom": "Zoom",
+    "Plan Currency": "Plan Currency",
+    "WeChat mini-program virtual payment requires CNY plans priced to the exact cent.": "WeChat mini-program virtual payment requires CNY plans priced to the exact cent.",
+    "Item (道具) ID created in the WeChat MP console under 虚拟支付 → 道具管理. Requires a CNY plan; the item price must equal the plan price.": "Item (道具) ID created in the WeChat MP console under 虚拟支付 → 道具管理. Requires a CNY plan; the item price must equal the plan price.",
+    "WeChat Mini-Program Virtual Payment": "WeChat Mini-Program Virtual Payment",
+    "Personal-subject 道具直购 (short_series_goods) integration for mini-program subscription plans. Plans sold this way must be CNY and map to an item created in the WeChat MP console under 虚拟支付 → 道具管理.": "Personal-subject 道具直购 (short_series_goods) integration for mini-program subscription plans. Plans sold this way must be CNY and map to an item created in the WeChat MP console under 虚拟支付 → 道具管理.",
+    "Push Configuration:": "Push Configuration:",
+    "Message push URL:": "Message push URL:",
+    "Configure the URL and Token below (plaintext mode) in the WeChat MP console under 开发管理 → 消息推送. The Token verifies delivery and refund pushes.": "Configure the URL and Token below (plaintext mode) in the WeChat MP console under 开发管理 → 消息推送. The Token verifies delivery and refund pushes.",
+    "Mini-program AppID": "Mini-program AppID",
+    "Mini-program AppSecret": "Mini-program AppSecret",
+    "Enter new secret to update": "Enter new secret to update",
+    "Only needed for the query_order reconciliation endpoint; leave blank unless rotating": "Only needed for the query_order reconciliation endpoint; leave blank unless rotating",
+    "Offer ID": "Offer ID",
+    "Found in MP console: 虚拟支付 → 基本配置": "Found in MP console: 虚拟支付 → 基本配置",
+    "Production AppKey": "Production AppKey",
+    "Sandbox AppKey": "Sandbox AppKey",
+    "Only used when Env is set to 1 (sandbox)": "Only used when Env is set to 1 (sandbox)",
+    "Message Push Token": "Message Push Token",
+    "The Token configured with the push URL in the MP console; verifies every push": "The Token configured with the push URL in the MP console; verifies every push",
+    "Environment": "Environment",
+    "0 = production (personal subject), 1 = sandbox": "0 = production (personal subject), 1 = sandbox"
   }
 }

@@ -108,3 +108,24 @@ func isEpayWebhookConfigured() bool {
 func isEpayWebhookEnabled() bool {
 	return isEpayTopUpEnabled()
 }
+
+// isWechatVpayConfigured reports whether the WeChat mini-program virtual payment
+// credentials needed to sign orders are populated (presence-of-credentials = enabled,
+// matching the other gateways). PushToken additionally gates the push endpoint.
+func isWechatVpayConfigured() bool {
+	return strings.TrimSpace(setting.WechatVpayAppId) != "" &&
+		strings.TrimSpace(setting.WechatVpayOfferId) != "" &&
+		strings.TrimSpace(setting.WechatVpayAppKey) != ""
+}
+
+func isWechatVpayTopUpEnabled() bool {
+	return isPaymentComplianceConfirmed() && isWechatVpayConfigured()
+}
+
+func isWechatVpayWebhookConfigured() bool {
+	return strings.TrimSpace(setting.WechatVpayPushToken) != ""
+}
+
+func isWechatVpayWebhookEnabled() bool {
+	return isWechatVpayTopUpEnabled() && isWechatVpayWebhookConfigured()
+}

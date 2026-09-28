@@ -168,6 +168,7 @@ type SubscriptionPlan struct {
 	StripePriceId         string `json:"stripe_price_id" gorm:"type:varchar(128);default:''"`
 	CreemProductId        string `json:"creem_product_id" gorm:"type:varchar(128);default:''"`
 	WaffoPancakeProductId string `json:"waffo_pancake_product_id" gorm:"type:varchar(128);default:''"`
+	WechatVpayProductId   string `json:"wechat_vpay_product_id" gorm:"type:varchar(128);default:''"`
 
 	// Max purchases per user (0 = unlimited)
 	MaxPurchasePerUser int `json:"max_purchase_per_user" gorm:"type:int;default:0"`
@@ -263,6 +264,10 @@ type UserSubscription struct {
 	Status    string `json:"status" gorm:"type:varchar(32);index;index:idx_user_sub_active,priority:2"` // active/expired/cancelled
 
 	Source string `json:"source" gorm:"type:varchar(32);default:'order'"` // order/admin
+
+	// Trade number of the SubscriptionOrder that created this subscription (empty for
+	// admin-bound subscriptions). Lets refund pushes trace order -> subscription.
+	SourceTradeNo string `json:"source_trade_no" gorm:"type:varchar(64);default:'';index"`
 
 	LastResetTime int64 `json:"last_reset_time" gorm:"type:bigint;default:0"`
 	NextResetTime int64 `json:"next_reset_time" gorm:"type:bigint;default:0;index"`
@@ -481,7 +486,7 @@ func downgradeUserGroupForSubscriptionTx(tx *gorm.DB, sub *UserSubscription, now
 	return target, nil
 }
 
-func CreateUserSubscriptionFromPlanTx(tx *gorm.DB, userId int, plan *SubscriptionPlan, source string) (*UserSubscription, error) {
+func CreateUserSubscriptionFromPlanTx(tx *gorm.DB, userId int, plan *SubscriptionPlan, source string, sourceTradeNo string) (*UserSubscription, error) {
 	if tx == nil {
 		return nil, errors.New("tx is nil")
 	}
@@ -502,7 +507,7 @@ func CreateUserSubscriptionFromPlanTx(tx *gorm.DB, userId int, plan *Subscriptio
 			return nil, errors.New("已达到该套餐购买上限")
 		}
 	}
-	nowUnix := GetDBTimestamp()
+	nowUnix := GetDBTimestampTx(tx)
 	now := time.Unix(nowUnix, 0)
 	endUnix, err := calcPlanEndTime(now, plan)
 	if err != nil {
@@ -542,6 +547,7 @@ func CreateUserSubscriptionFromPlanTx(tx *gorm.DB, userId int, plan *Subscriptio
 		EndTime:             endUnix,
 		Status:              "active",
 		Source:              source,
+		SourceTradeNo:       sourceTradeNo,
 		LastResetTime:       lastReset,
 		NextResetTime:       nextReset,
 		UpgradeGroup:        upgradeGroup,
@@ -593,7 +599,10 @@ func CompleteSubscriptionOrder(tradeNo string, providerPayload string, expectedP
 		if order.Status != common.TopUpStatusPending {
 			return ErrSubscriptionOrderStatusInvalid
 		}
-		plan, err := GetSubscriptionPlanById(order.PlanId)
+		// 用事务内读取而不是缓存的 GetSubscriptionPlanById：事务已占用连接，
+		// 单连接数据库（内存 SQLite 测试环境）下事务内再走全局 DB 会死锁；
+		// 同时保证完成订单时读到套餐当前值。
+		plan, err := getSubscriptionPlanByIdTx(tx, order.PlanId)
 		if err != nil {
 			return err
 		}
@@ -606,7 +615,7 @@ func CompleteSubscriptionOrder(tradeNo string, providerPayload string, expectedP
 		if err := lockForUpdate(tx).Select("id").Where("id = ?", order.UserId).First(&userRow).Error; err != nil {
 			return err
 		}
-		subscription, err := CreateUserSubscriptionFromPlanTx(tx, order.UserId, plan, "order")
+		subscription, err := CreateUserSubscriptionFromPlanTx(tx, order.UserId, plan, "order", tradeNo)
 		if err != nil {
 			return err
 		}
@@ -723,7 +732,7 @@ func AdminBindSubscription(userId int, planId int, sourceNote string) (string, e
 		if err := lockForUpdate(tx).Select("id").Where("id = ?", userId).First(&userRow).Error; err != nil {
 			return err
 		}
-		subscription, err := CreateUserSubscriptionFromPlanTx(tx, userId, plan, "admin")
+		subscription, err := CreateUserSubscriptionFromPlanTx(tx, userId, plan, "admin", "")
 		if err == nil {
 			groupChanged = subscription.PrevUserGroup != ""
 		}
@@ -796,13 +805,14 @@ func PurchaseSubscriptionWithBalance(userId int, planId int) error {
 			}
 		}
 
-		subscription, err := CreateUserSubscriptionFromPlanTx(tx, userId, plan, PaymentMethodBalance)
+		now := common.GetTimestamp()
+		tradeNo := fmt.Sprintf("SUBBALUSR%dNO%s%d", userId, common.GetRandomString(6), time.Now().UnixNano())
+
+		subscription, err := CreateUserSubscriptionFromPlanTx(tx, userId, plan, PaymentMethodBalance, tradeNo)
 		if err != nil {
 			return err
 		}
 
-		now := common.GetTimestamp()
-		tradeNo := fmt.Sprintf("SUBBALUSR%dNO%s%d", userId, common.GetRandomString(6), time.Now().UnixNano())
 		order := &SubscriptionOrder{
 			UserId:          userId,
 			PlanId:          plan.Id,
@@ -923,6 +933,19 @@ func buildSubscriptionSummaries(subs []UserSubscription) []SubscriptionSummary {
 	return result
 }
 
+// cancelUserSubscriptionTx marks the subscription cancelled, ends it immediately and
+// applies the group downgrade. Returns the downgrade target group ("" when unchanged).
+func cancelUserSubscriptionTx(tx *gorm.DB, sub *UserSubscription, now int64) (string, error) {
+	if err := tx.Model(sub).Updates(map[string]any{
+		"status":     "cancelled",
+		"end_time":   now,
+		"updated_at": now,
+	}).Error; err != nil {
+		return "", err
+	}
+	return downgradeUserGroupForSubscriptionTx(tx, sub, now)
+}
+
 // AdminInvalidateUserSubscription marks a user subscription as cancelled and ends it immediately.
 func AdminInvalidateUserSubscription(userSubscriptionId int) (string, error) {
 	if userSubscriptionId <= 0 {
@@ -939,14 +962,7 @@ func AdminInvalidateUserSubscription(userSubscriptionId int) (string, error) {
 			return err
 		}
 		userId = sub.UserId
-		if err := tx.Model(&sub).Updates(map[string]any{
-			"status":     "cancelled",
-			"end_time":   now,
-			"updated_at": now,
-		}).Error; err != nil {
-			return err
-		}
-		target, err := downgradeUserGroupForSubscriptionTx(tx, &sub, now)
+		target, err := cancelUserSubscriptionTx(tx, &sub, now)
 		if err != nil {
 			return err
 		}
@@ -966,6 +982,48 @@ func AdminInvalidateUserSubscription(userSubscriptionId int) (string, error) {
 		return fmt.Sprintf("用户分组将回退到 %s", downgradeGroup), nil
 	}
 	return "", nil
+}
+
+// CancelUserSubscriptionByTradeNo cancels the still-active subscription created by the
+// order with the given trade number (used by WeChat virtual-pay refund pushes).
+// Returns the cancelled subscription id, or 0 when no active subscription is linked
+// to that order (admin-bound, already cancelled, or already expired).
+func CancelUserSubscriptionByTradeNo(tradeNo string) (int, error) {
+	if tradeNo == "" {
+		return 0, errors.New("tradeNo is empty")
+	}
+	now := common.GetTimestamp()
+	cancelledId := 0
+	cacheGroup := ""
+	var userId int
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		var sub UserSubscription
+		if err := lockForUpdate(tx).
+			Where("source_trade_no = ? AND status = ?", tradeNo, "active").
+			Order("id ASC").First(&sub).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil
+			}
+			return err
+		}
+		userId = sub.UserId
+		target, err := cancelUserSubscriptionTx(tx, &sub, now)
+		if err != nil {
+			return err
+		}
+		cancelledId = sub.Id
+		if target != "" {
+			cacheGroup = target
+		}
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+	if cacheGroup != "" && userId > 0 {
+		refreshSubscriptionUserGroupCache(userId, "subscription refund cancel")
+	}
+	return cancelledId, nil
 }
 
 // AdminDeleteUserSubscription hard-deletes a user subscription.

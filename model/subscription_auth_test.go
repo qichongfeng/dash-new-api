@@ -52,7 +52,7 @@ func TestSubscriptionGroupTransitionsPreserveAuthVersionAndSessions(t *testing.T
 	}
 	require.NoError(t, DB.Create(plan).Error)
 
-	subscription, err := CreateUserSubscriptionFromPlanTx(DB, user.Id, plan, "test")
+	subscription, err := CreateUserSubscriptionFromPlanTx(DB, user.Id, plan, "test", "")
 	require.NoError(t, err)
 	require.Equal(t, "default", subscription.PrevUserGroup)
 	require.NoError(t, RefreshUserGroupCache(user.Id))

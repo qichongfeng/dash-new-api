@@ -193,9 +193,16 @@ func SetApiRouter(router *gin.Engine) {
 			subscriptionAdminRoute.POST("/users/:id/subscriptions/reset", controller.AdminResetUserSubscriptionsByPlan)
 			subscriptionAdminRoute.POST("/user_subscriptions/:id/invalidate", controller.AdminInvalidateUserSubscription)
 			subscriptionAdminRoute.DELETE("/user_subscriptions/:id", controller.AdminDeleteUserSubscription)
+
+			// WeChat mini-program virtual payment (created by external mini-program backends)
+			subscriptionAdminRoute.POST("/users/:id/wechat-vpay/orders", middleware.CriticalRateLimit(), controller.AdminCreateWechatVpayOrder)
+			subscriptionAdminRoute.GET("/wechat-vpay/orders/:trade_no", controller.AdminGetWechatVpayOrder)
+			subscriptionAdminRoute.POST("/wechat-vpay/orders/:trade_no/query", controller.AdminQueryWechatVpayOrderRemote)
 		}
 
 		// Subscription payment callbacks (no auth)
+		apiRouter.GET("/subscription/wechat-vpay/notify", controller.WechatVpayNotify)
+		apiRouter.POST("/subscription/wechat-vpay/notify", anonymousRequestBodyLimit, controller.WechatVpayNotify)
 		apiRouter.POST("/subscription/epay/notify", anonymousRequestBodyLimit, controller.SubscriptionEpayNotify)
 		apiRouter.GET("/subscription/epay/notify", controller.SubscriptionEpayNotify)
 		apiRouter.GET("/subscription/epay/return", controller.SubscriptionEpayReturn)

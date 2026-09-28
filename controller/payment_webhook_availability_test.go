@@ -142,6 +142,39 @@ func TestWaffoPancakeWebhookEnabledRequiresTopUpAndWebhookConfig(t *testing.T) {
 	require.False(t, isWaffoPancakeWebhookEnabled())
 }
 
+func TestWechatVpayEnabledRequiresCredentialsAndPushToken(t *testing.T) {
+	confirmPaymentComplianceForTest(t)
+	originalAppId := setting.WechatVpayAppId
+	originalOfferId := setting.WechatVpayOfferId
+	originalAppKey := setting.WechatVpayAppKey
+	originalPushToken := setting.WechatVpayPushToken
+	t.Cleanup(func() {
+		setting.WechatVpayAppId = originalAppId
+		setting.WechatVpayOfferId = originalOfferId
+		setting.WechatVpayAppKey = originalAppKey
+		setting.WechatVpayPushToken = originalPushToken
+	})
+
+	// Order creation needs AppID + OfferID + AppKey.
+	setting.WechatVpayAppId = "wx-app"
+	setting.WechatVpayOfferId = "offer"
+	setting.WechatVpayAppKey = "app-key"
+	setting.WechatVpayPushToken = "push-token"
+	require.True(t, isWechatVpayTopUpEnabled())
+	require.True(t, isWechatVpayWebhookEnabled())
+
+	// Without the push token the order endpoint still works, the push endpoint does not.
+	setting.WechatVpayPushToken = ""
+	require.True(t, isWechatVpayTopUpEnabled())
+	require.False(t, isWechatVpayWebhookEnabled())
+
+	// Any missing credential disables everything.
+	setting.WechatVpayPushToken = "push-token"
+	setting.WechatVpayAppKey = ""
+	require.False(t, isWechatVpayTopUpEnabled())
+	require.False(t, isWechatVpayWebhookEnabled())
+}
+
 func TestEpayWebhookEnabledRequiresTopUpAndWebhookConfig(t *testing.T) {
 	confirmPaymentComplianceForTest(t)
 	originalPayAddress := operation_setting.PayAddress

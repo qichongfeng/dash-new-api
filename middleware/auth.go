@@ -103,9 +103,12 @@ func UserAuth() func(c *gin.Context) {
 	}
 }
 
+// AdminAuth gates the management API surface. This fork has no admin role:
+// only the root account may reach these routes, including holders of legacy
+// role-10 personal access tokens.
 func AdminAuth() func(c *gin.Context) {
 	return func(c *gin.Context) {
-		authHelper(c, common.RoleAdminUser)
+		authHelper(c, common.RoleRootUser)
 	}
 }
 

@@ -31,10 +31,6 @@ const usersSearchSchema = z.object({
     .array(z.enum(['-1', '1', '2']))
     .optional()
     .catch([]),
-  role: z
-    .array(z.enum(['1', '10', '100']))
-    .optional()
-    .catch([]),
   group: z.string().optional().catch(''),
 })
 
@@ -42,7 +38,7 @@ export const Route = createFileRoute('/_authenticated/users/')({
   beforeLoad: () => {
     const { auth } = useAuthStore.getState()
 
-    if (!auth.user || auth.user.role < ROLE.ADMIN) {
+    if (!auth.user || auth.user.role < ROLE.SUPER_ADMIN) {
       throw redirect({
         to: '/403',
       })

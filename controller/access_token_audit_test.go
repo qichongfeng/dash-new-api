@@ -122,6 +122,9 @@ func TestAccessTokenLifecycleAndLateRequests(t *testing.T) {
 
 func TestAccessTokenAuditsResultsAndExcludesBrowserSessions(t *testing.T) {
 	user, pat := setupAccessTokenAudit(t)
+	rootToken := "root-audit-pat"
+	root := &model.User{Username: "root-audit", Role: common.RoleRootUser, Status: common.UserStatusEnabled, AuthVersion: 1, AccessToken: &rootToken, AffCode: "root-audit"}
+	require.NoError(t, model.DB.Create(root).Error)
 	router := gin.New()
 	router.Use(middleware.RequestId(), middleware.AccessTokenAudit())
 	router.NoRoute(func(c *gin.Context) { c.JSON(404, gin.H{"success": false}) })
@@ -134,19 +137,31 @@ func TestAccessTokenAuditsResultsAndExcludesBrowserSessions(t *testing.T) {
 	})
 	router.POST("/business-failure", middleware.AdminAuth(), func(c *gin.Context) { c.JSON(200, gin.H{"success": false, "message": "secret-response"}) })
 	router.GET("/forbidden", middleware.RootAuth(), func(c *gin.Context) { c.Status(204) })
+	// AdminAuth is root-only in this fork, so the admin-credential cases below
+	// must authenticate as root; the RootAuth case keeps the admin credential
+	// to prove the 403 path still audits without secrets.
 	cases := []struct {
-		method, path string
-		status       int
-		success      bool
-	}{{"GET", "/missing", 404, false}, {"GET", "/public", 200, true}, {"GET", "/rate-limited", 429, false}, {"GET", "/read/sensitive-id?password=secret-query", 200, true}, {"POST", "/write", 200, true}, {"POST", "/business-failure", 200, false}, {"GET", "/forbidden", 403, false}}
+		method, path, token string
+		actorID             int
+		status              int
+		success             bool
+	}{
+		{"GET", "/missing", pat, user.Id, 404, false},
+		{"GET", "/public", pat, user.Id, 200, true},
+		{"GET", "/rate-limited", pat, user.Id, 429, false},
+		{"GET", "/read/sensitive-id?password=secret-query", pat, user.Id, 200, true},
+		{"POST", "/write", rootToken, root.Id, 200, true},
+		{"POST", "/business-failure", rootToken, root.Id, 200, false},
+		{"GET", "/forbidden", pat, user.Id, 403, false},
+	}
 	for _, tc := range cases {
-		response := auditRequest(router, tc.method, tc.path, pat)
+		response := auditRequest(router, tc.method, tc.path, tc.token)
 		require.Equal(t, tc.status, response.Code)
 		var access model.AuditLog
 		require.NoError(t, model.LOG_DB.Where("request_id = ? AND category = ?", response.Header().Get(common.RequestIdKey), model.AuditCategoryAccessToken).First(&access).Error)
 		assert.Equal(t, tc.success, access.Success)
 		assert.Equal(t, tc.status, access.Status)
-		assert.Equal(t, user.Id, access.UserId)
+		assert.Equal(t, tc.actorID, access.UserId)
 		assert.Equal(t, "192.0.2.8", access.Ip)
 		assert.Equal(t, "audit-test-client", access.UserAgent)
 		assert.NotContains(t, access.Route, "sensitive-id")
@@ -184,7 +199,7 @@ func TestAuditIsolationVisibilityAndFailureContracts(t *testing.T) {
 	router := gin.New()
 	router.Use(middleware.RequestId(), middleware.AccessTokenAudit())
 	router.GET("/api/audit/self", middleware.UserAuth(), GetAuditLogs)
-	router.GET("/api/audit", middleware.AdminAuth(), middleware.RequirePermission(authz.AuditRead), GetAuditLogs)
+	router.GET("/api/audit", middleware.UserAuth(), middleware.RequirePermission(authz.AuditRead), GetAuditLogs)
 	response := auditRequest(router, "GET", "/api/audit/self?username=other&user_id=2&category=security&success=false&page_size=1", pat)
 	var result struct {
 		Success bool
@@ -250,7 +265,7 @@ func TestAuditRoleVisibilityAndPermissions(t *testing.T) {
 	model.RecordAuditLog(nil, model.AuditLog{ActorRole: 100, UserId: root.Id, Username: root.Username, Category: model.AuditCategorySecurity, RequestId: "root-owned", Other: metadata})
 	router := gin.New()
 	router.Use(middleware.RequestId(), middleware.AccessTokenAudit())
-	router.GET("/api/audit", middleware.AdminAuth(), middleware.RequirePermission(authz.AuditRead), GetAuditLogs)
+	router.GET("/api/audit", middleware.UserAuth(), middleware.RequirePermission(authz.AuditRead), GetAuditLogs)
 	router.GET("/api/audit/self", middleware.UserAuth(), GetAuditLogs)
 	now := time.Now().Unix()
 	session := &model.UserSession{SID: "audit-permissions-session", UserID: admin.Id, Version: 1, UserAuthVersion: 1, Status: model.UserSessionStatusActive, RefreshHash: "placeholder", LoginMethod: "password", LastActiveAt: now, ExpiresAt: now + 3600}

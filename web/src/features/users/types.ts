@@ -18,8 +18,6 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { z } from 'zod'
 
-import type { AdminPermissionMatrix } from '@/lib/admin-permissions'
-
 // ============================================================================
 // User Schema & Types
 // ============================================================================
@@ -121,15 +119,12 @@ export interface UserFormData {
   username: string
   display_name: string
   password?: string
-  role?: number // Only used when creating user
   quota?: number // Only used when updating user
   group?: string // Only used when updating user
   remark?: string // Only used when updating user
-  admin_permissions?: AdminPermissionMatrix
 }
 
 export type ManageUserAction =
-  | 'promote'
   | 'demote'
   | 'enable'
   | 'disable'

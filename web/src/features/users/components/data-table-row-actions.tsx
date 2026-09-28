@@ -22,7 +22,6 @@ import {
   Trash2,
   Power,
   PowerOff,
-  ArrowUp,
   ArrowDown,
   KeyRound,
   ShieldAlert,
@@ -184,15 +183,6 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
             {t('Demote')}
             <DropdownMenuShortcut>
               <ArrowDown size={16} />
-            </DropdownMenuShortcut>
-          </DropdownMenuItem>
-        )}
-
-        {!isAdmin && (
-          <DropdownMenuItem onClick={() => handleManage('promote')}>
-            {t('Promote')}
-            <DropdownMenuShortcut>
-              <ArrowUp size={16} />
             </DropdownMenuShortcut>
           </DropdownMenuItem>
         )}

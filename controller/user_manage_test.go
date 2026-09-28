@@ -192,6 +192,71 @@ func TestManageUserDeleteReturnsImmediatelyAndUnknownActionFails(t *testing.T) {
 	assert.Equal(t, common.UserStatusEnabled, unchanged.Status)
 }
 
+func performCreateUserRequest(t *testing.T, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/user/", strings.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("id", 9999)
+	c.Set("role", common.RoleRootUser)
+	c.Set("username", "root-operator")
+	CreateUser(c)
+	return recorder
+}
+
+func TestCreateUserForcesCommonRoleWhenRoleOmitted(t *testing.T) {
+	db := setupManageUserTestDB(t)
+	previousMaster := common.IsMasterNode
+	common.IsMasterNode = false
+	t.Cleanup(func() { common.IsMasterNode = previousMaster })
+	require.NoError(t, authz.Init(db))
+
+	recorder := performCreateUserRequest(t, `{"username":"created-common-user","password":"password-123"}`)
+	assert.Equal(t, http.StatusOK, recorder.Code)
+	assert.Contains(t, recorder.Body.String(), `"success":true`)
+
+	var created model.User
+	require.NoError(t, db.Where("username = ?", "created-common-user").First(&created).Error)
+	assert.Equal(t, common.RoleCommonUser, created.Role)
+}
+
+func TestCreateUserRejectsElevatedRole(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		role int
+	}{
+		{"admin", common.RoleAdminUser},
+		{"root", common.RoleRootUser},
+		{"arbitrary", 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db := setupManageUserTestDB(t)
+			recorder := performCreateUserRequest(t, fmt.Sprintf(`{"username":"elevated-%s","password":"password-123","role":%d}`, tc.name, tc.role))
+			assert.Contains(t, recorder.Body.String(), `"success":false`)
+			var count int64
+			require.NoError(t, db.Model(&model.User{}).Where("username = ?", "elevated-"+tc.name).Count(&count).Error)
+			assert.Zero(t, count)
+		})
+	}
+}
+
+func TestManageUserPromoteActionIsRejected(t *testing.T) {
+	db := setupManageUserTestDB(t)
+	user := model.User{
+		Username: "promote-target", Password: "password", Role: common.RoleCommonUser,
+		Status: common.UserStatusEnabled, Group: "default", AuthVersion: 1, AffCode: "promote-target-aff",
+	}
+	require.NoError(t, db.Create(&user).Error)
+
+	recorder := performManageUserRequest(t, fmt.Sprintf(`{"id":%d,"action":"promote"}`, user.Id))
+	assert.Contains(t, recorder.Body.String(), `"success":false`)
+	require.NoError(t, db.First(&user, user.Id).Error)
+	assert.Equal(t, common.RoleCommonUser, user.Role)
+	assert.EqualValues(t, 1, user.AuthVersion)
+}
+
 func createQuotaTestOperator(t *testing.T, db *gorm.DB, role int) model.User {
 	t.Helper()
 	if role == 0 {

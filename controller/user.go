@@ -993,9 +993,10 @@ func CreateUser(c *gin.Context) {
 	if user.DisplayName == "" {
 		user.DisplayName = user.Username
 	}
-	myRole := c.GetInt("role")
-	if user.Role >= myRole {
-		common.ApiErrorI18n(c, i18n.MsgUserCannotCreateHigherLevel)
+	// This fork only ever creates common users: an absent role (0) and an
+	// explicit common role (1) are accepted, everything else is rejected.
+	if user.Role != common.RoleGuestUser && user.Role != common.RoleCommonUser {
+		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
 		return
 	}
 	// Even for admin users, we cannot fully trust them!
@@ -1003,7 +1004,7 @@ func CreateUser(c *gin.Context) {
 		Username:    user.Username,
 		Password:    user.Password,
 		DisplayName: user.DisplayName,
-		Role:        user.Role, // 保持管理员设置的角色
+		Role:        common.RoleCommonUser, // 强制普通用户，不透传请求值
 	}
 	authzTouched := false
 	if err := model.DB.Transaction(func(tx *gorm.DB) error {
@@ -1122,16 +1123,6 @@ func ManageUser(c *gin.Context) {
 			"message": "",
 		})
 		return
-	case "promote":
-		if myRole != common.RoleRootUser {
-			common.ApiErrorI18n(c, i18n.MsgUserAdminCannotPromote)
-			return
-		}
-		if user.Role >= common.RoleAdminUser {
-			common.ApiErrorI18n(c, i18n.MsgUserAlreadyAdmin)
-			return
-		}
-		user.Role = common.RoleAdminUser
 	case "demote":
 		if user.Role == common.RoleRootUser {
 			common.ApiErrorI18n(c, i18n.MsgUserCannotDemoteRootUser)

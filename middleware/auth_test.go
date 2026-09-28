@@ -334,3 +334,43 @@ func TestApplyWebSocketSubprotocolAuthorizationReadsRepeatedHeaders(t *testing.T
 	assert.True(t, applyWebSocketSubprotocolAuthorization(header))
 	assert.Equal(t, "Bearer sk-later-field", header.Get("Authorization"))
 }
+
+func TestAdminAuthRejectsAdminRoleAndAllowsRoot(t *testing.T) {
+	setupDashboardAuthMiddlewareTest(t)
+	adminToken := "legacy.admin.pat.token"
+	rootToken := "root.owner.pat.token"
+	adminUser := &model.User{
+		Username: "legacy-admin", Password: "password-placeholder", Role: common.RoleAdminUser,
+		Status: common.UserStatusEnabled, Group: "default", AccessToken: &adminToken, AuthVersion: 1,
+		AffCode: "middleware-aff-legacy-admin",
+	}
+	rootUser := &model.User{
+		Username: "root-owner", Password: "password-placeholder", Role: common.RoleRootUser,
+		Status: common.UserStatusEnabled, Group: "default", AccessToken: &rootToken, AuthVersion: 1,
+		AffCode: "middleware-aff-root-owner",
+	}
+	require.NoError(t, model.DB.Create(adminUser).Error)
+	require.NoError(t, model.DB.Create(rootUser).Error)
+	router := gin.New()
+	router.GET("/protected", AdminAuth(), func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"id": c.GetInt("id")})
+	})
+
+	adminRequest := httptest.NewRequest(http.MethodGet, "/protected", nil)
+	adminRequest.Header.Set("Authorization", "Bearer "+adminToken)
+	adminResponse := httptest.NewRecorder()
+	router.ServeHTTP(adminResponse, adminRequest)
+	assert.Equal(t, http.StatusForbidden, adminResponse.Code)
+	assert.Contains(t, adminResponse.Body.String(), "AUTH_INSUFFICIENT_PRIVILEGE")
+
+	rootRequest := httptest.NewRequest(http.MethodGet, "/protected", nil)
+	rootRequest.Header.Set("Authorization", "Bearer "+rootToken)
+	rootResponse := httptest.NewRecorder()
+	router.ServeHTTP(rootResponse, rootRequest)
+	assert.Equal(t, http.StatusOK, rootResponse.Code)
+	var body struct {
+		ID int `json:"id"`
+	}
+	require.NoError(t, common.Unmarshal(rootResponse.Body.Bytes(), &body))
+	assert.Equal(t, rootUser.Id, body.ID)
+}

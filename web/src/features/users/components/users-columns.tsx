@@ -228,9 +228,6 @@ export function useUsersColumns(): ColumnDef<User>[] {
 
           return <span className='text-sm'>{t(roleConfig.labelKey)}</span>
         },
-        filterFn: (row, id, value) => {
-          return value.includes(String(row.getValue(id)))
-        },
         enableSorting: false,
         size: 120,
         meta: { mobileOrder: 20 },

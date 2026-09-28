@@ -94,7 +94,7 @@ func TestDeleteRedemptionBatch(t *testing.T) {
 			require.NoError(t, logDB.AutoMigrate(&model.AuditLog{}))
 			t.Cleanup(func() { require.NoError(t, logDB.Migrator().DropTable(&model.AuditLog{})) })
 			token := "redemption-audit-test-token"
-			admin := model.User{Username: "redemption-audit-admin", Password: "unused", Role: common.RoleAdminUser, Status: common.UserStatusEnabled, Group: "default", AccessToken: &token}
+			admin := model.User{Username: "redemption-audit-admin", Password: "unused", Role: common.RoleRootUser, Status: common.UserStatusEnabled, Group: "default", AccessToken: &token}
 			require.NoError(t, db.Create(&admin).Error)
 			codes := make([]model.Redemption, 16)
 			for index := range codes {

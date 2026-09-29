@@ -51,7 +51,6 @@ export function getPlanFormSchema(t: TFunction) {
     creem_product_id: z.string().optional(),
     waffo_pancake_product_id: z.string().optional(),
     wechat_vpay_product_id: z.string().optional(),
-    currency: z.enum(['USD', 'CNY']),
   })
 }
 
@@ -78,7 +77,6 @@ export const PLAN_FORM_DEFAULTS: PlanFormValues = {
   creem_product_id: '',
   waffo_pancake_product_id: '',
   wechat_vpay_product_id: '',
-  currency: 'USD',
 }
 
 export function planToFormValues(plan: SubscriptionPlan): PlanFormValues {
@@ -103,7 +101,6 @@ export function planToFormValues(plan: SubscriptionPlan): PlanFormValues {
     creem_product_id: plan.creem_product_id || '',
     waffo_pancake_product_id: plan.waffo_pancake_product_id || '',
     wechat_vpay_product_id: plan.wechat_vpay_product_id || '',
-    currency: plan.currency === 'CNY' ? 'CNY' : 'USD',
   }
 }
 
@@ -112,7 +109,6 @@ export function formValuesToPlanPayload(values: PlanFormValues): PlanPayload {
     plan: {
       ...values,
       price_amount: Number(values.price_amount || 0),
-      currency: values.currency,
       duration_value: Number(values.duration_value || 0),
       custom_seconds: Number(values.custom_seconds || 0),
       quota_reset_period: values.quota_reset_period || 'never',

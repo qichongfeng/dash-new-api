@@ -97,7 +97,7 @@ export function SubscriptionsMutateDrawer({
   const { t } = useTranslation()
   const isEdit = !!currentRow?.plan?.id
   const { triggerRefresh } = useSubscriptions()
-  const { meta: currencyMeta } = getCurrencyDisplay()
+  const { meta: currencyMeta, config: currencyConfig } = getCurrencyDisplay()
   const tokensOnly = currencyMeta.kind === 'tokens'
   const currencyLabel = getCurrencyLabel()
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -158,6 +158,14 @@ export function SubscriptionsMutateDrawer({
     typeof watchedTitle === 'string' &&
     watchedTitle.trim().length > 0 &&
     Number(watchedPrice ?? 0) > 0
+
+  // WeChat 道具登记价：套餐价（USD）× 美元汇率换算为人民币分，须为整数分且与
+  // MP 后台道具登记价格完全一致，否则微信侧拉起支付失败（后端同规则校验）。
+  const wechatFenRaw = watchedPrice * currencyConfig.usdExchangeRate * 100
+  const wechatFen = Math.round(wechatFenRaw)
+  const wechatFenExact =
+    Number(watchedPrice ?? 0) > 0 &&
+    Math.abs(wechatFenRaw - wechatFen) <= 1e-4
 
   const onSubmit = async (values: PlanFormValues) => {
     setIsSubmitting(true)
@@ -396,42 +404,6 @@ export function SubscriptionsMutateDrawer({
                   )}
                 />
               </div>
-
-              <FormField
-                control={form.control}
-                name='currency'
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t('Plan Currency')}</FormLabel>
-                    <Select
-                      items={[
-                        { value: 'USD', label: 'USD' },
-                        { value: 'CNY', label: 'CNY' },
-                      ]}
-                      onValueChange={field.onChange}
-                      value={field.value}
-                    >
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent alignItemWithTrigger={false}>
-                        <SelectGroup>
-                          <SelectItem value='USD'>USD</SelectItem>
-                          <SelectItem value='CNY'>CNY</SelectItem>
-                        </SelectGroup>
-                      </SelectContent>
-                    </Select>
-                    <FormDescription>
-                      {t(
-                        'WeChat mini-program virtual payment requires CNY plans priced to the exact cent.'
-                      )}
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
 
               <div className='grid grid-cols-1 gap-3 sm:grid-cols-2'>
                 <FormField
@@ -868,9 +840,28 @@ export function SubscriptionsMutateDrawer({
                     </FormControl>
                     <FormDescription>
                       {t(
-                        'Item (道具) ID created in the WeChat MP console under 虚拟支付 → 道具管理. Requires a CNY plan; the item price must equal the plan price.'
+                        'Item (道具) ID created in the WeChat MP console under 虚拟支付 → 道具管理. The item price must equal the converted price shown below.'
                       )}
                     </FormDescription>
+                    {watchedPrice > 0 &&
+                      (wechatFenExact ? (
+                        <FormDescription>
+                          {t(
+                            'Register the WeChat item at {{yuan}} ({{fen}} fen), converted from the plan price at the USD exchange rate {{rate}}. Update the console item whenever the price or rate changes.',
+                            {
+                              yuan: `¥${(wechatFen / 100).toFixed(2)}`,
+                              fen: wechatFen,
+                              rate: currencyConfig.usdExchangeRate,
+                            }
+                          )}
+                        </FormDescription>
+                      ) : (
+                        <FormDescription>
+                          {t(
+                            'Plan price × USD exchange rate does not land on an exact cent; WeChat orders will be rejected. Adjust the price or the exchange rate.'
+                          )}
+                        </FormDescription>
+                      ))}
                     <FormMessage />
                   </FormItem>
                 )}

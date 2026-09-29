@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -16,6 +15,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 )
 
 // WeChat mini-program virtual payment (个人主体虚拟支付, 道具直购).
@@ -89,15 +89,11 @@ func AdminCreateWechatVpayOrder(c *gin.Context) {
 		common.ApiErrorMsg(c, "该套餐未配置微信虚拟支付道具ID")
 		return
 	}
-	if !strings.EqualFold(plan.Currency, "CNY") {
-		common.ApiErrorMsg(c, "微信虚拟支付仅支持 CNY 计价的套餐")
-		return
-	}
-	// goodsPrice 单位为分，必须精确到分且与 MP 后台道具价格一致。
-	priceInFen := plan.PriceAmount * 100
-	goodsPrice := int64(math.Round(priceInFen))
-	if plan.PriceAmount <= 0 || math.Abs(priceInFen-float64(goodsPrice)) > 1e-4 {
-		common.ApiErrorMsg(c, "套餐价格必须为正数且精确到分")
+	// 套餐以 USD 计价，按后台"美元汇率"换算为微信道具的人民币价格（单位：分）。
+	// 换算结果必须为正整数分，且与 MP 后台道具登记价格完全一致，否则微信侧拉起支付失败。
+	goodsPrice, err := service.WechatVpayGoodsPriceFen(plan.PriceAmount, operation_setting.USDExchangeRate)
+	if err != nil {
+		common.ApiErrorMsg(c, err.Error())
 		return
 	}
 	if plan.MaxPurchasePerUser > 0 {
@@ -133,7 +129,7 @@ func AdminCreateWechatVpayOrder(c *gin.Context) {
 	order := &model.SubscriptionOrder{
 		UserId:          user.Id,
 		PlanId:          plan.Id,
-		Money:           plan.PriceAmount,
+		Money:           float64(goodsPrice) / 100, // 实际人民币扣款额（元）
 		TradeNo:         tradeNo,
 		PaymentMethod:   model.PaymentMethodWechatVpay,
 		PaymentProvider: model.PaymentProviderWechatVpay,

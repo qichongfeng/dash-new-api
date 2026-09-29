@@ -142,3 +142,34 @@ func TestWechatVpayOrderStatusIsPaid(t *testing.T) {
 	assert.False(t, WechatVpayOrderStatusIsPaid(WechatVpayOrderStatusUserRefunded))
 	assert.False(t, WechatVpayOrderStatusIsPaid(WechatVpayOrderStatusClosed))
 }
+
+func TestWechatVpayGoodsPriceFen(t *testing.T) {
+	testCases := []struct {
+		name         string
+		priceAmount  float64
+		exchangeRate float64
+		expectedFen  int64
+		expectErr    bool
+	}{
+		{name: "whole conversion", priceAmount: 10, exchangeRate: 7.3, expectedFen: 7300},
+		{name: "exact fen conversion", priceAmount: 9.9, exchangeRate: 7, expectedFen: 6930},
+		{name: "float representation stays within tolerance", priceAmount: 9.9, exchangeRate: 7.3, expectedFen: 7227},
+		{name: "conversion between fen is rejected", priceAmount: 1.01, exchangeRate: 7.3, expectErr: true},
+		{name: "non-zero fen fraction is rejected", priceAmount: 0.99, exchangeRate: 7.3, expectErr: true},
+		{name: "zero price is rejected", priceAmount: 0, exchangeRate: 7.3, expectErr: true},
+		{name: "negative price is rejected", priceAmount: -1, exchangeRate: 7.3, expectErr: true},
+		{name: "zero rate is rejected", priceAmount: 10, exchangeRate: 0, expectErr: true},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			fen, err := WechatVpayGoodsPriceFen(tc.priceAmount, tc.exchangeRate)
+			if tc.expectErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tc.expectedFen, fen)
+		})
+	}
+}

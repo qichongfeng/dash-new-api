@@ -1705,7 +1705,7 @@ export function PaymentSettingsSection({
                   </h3>
                   <p className='text-muted-foreground text-sm'>
                     {t(
-                      'Personal-subject 道具直购 (short_series_goods) integration for mini-program subscription plans. Plans sold this way must be CNY and map to an item created in the WeChat MP console under 虚拟支付 → 道具管理.'
+                      'Personal-subject 道具直购 (short_series_goods) integration for mini-program subscription plans. Plans map to an item created in the WeChat MP console under 虚拟支付 → 道具管理; the item price must equal the plan price converted to CNY at the USD exchange rate, exact to the fen.'
                     )}
                   </p>
                 </div>

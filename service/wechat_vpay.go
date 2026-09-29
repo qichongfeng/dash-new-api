@@ -11,6 +11,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"sort"
@@ -119,6 +120,22 @@ type WechatVpayPayData struct {
 	SignData  string `json:"signData"`
 	PaySig    string `json:"paySig"`
 	Signature string `json:"signature"`
+}
+
+// WechatVpayGoodsPriceFen converts a USD plan price into the WeChat item price
+// in fen (1/100 CNY) via the admin-configured USD→CNY exchange rate. WeChat
+// requires a whole-fen price that exactly matches the item registered in the
+// MP console, so a conversion landing between fen is rejected.
+func WechatVpayGoodsPriceFen(priceAmount, usdExchangeRate float64) (int64, error) {
+	if priceAmount <= 0 || usdExchangeRate <= 0 {
+		return 0, fmt.Errorf("套餐价格必须为正数")
+	}
+	priceInFen := priceAmount * usdExchangeRate * 100
+	goodsPrice := int64(math.Round(priceInFen))
+	if math.Abs(priceInFen-float64(goodsPrice)) > 1e-4 {
+		return 0, fmt.Errorf("套餐价格×美元汇率换算后必须精确到分，请调整套餐价格或汇率")
+	}
+	return goodsPrice, nil
 }
 
 // BuildWechatVpayPayData signs a 道具直购 order for wx.requestVirtualPayment.

@@ -346,8 +346,9 @@ func AdminUpdateSubscriptionPlanStatus(c *gin.Context) {
 }
 
 type AdminBindSubscriptionRequest struct {
-	UserId int `json:"user_id"`
-	PlanId int `json:"plan_id"`
+	UserId int    `json:"user_id"`
+	PlanId int    `json:"plan_id"`
+	Source string `json:"source"` // 可选：外部系统标识（如 "钱喵"）；空 = admin
 }
 
 func AdminBindSubscription(c *gin.Context) {
@@ -356,11 +357,12 @@ func AdminBindSubscription(c *gin.Context) {
 	}
 
 	var req AdminBindSubscriptionRequest
-	if err := c.ShouldBindJSON(&req); err != nil || req.UserId <= 0 || req.PlanId <= 0 {
+	if err := c.ShouldBindJSON(&req); err != nil || req.UserId <= 0 || req.PlanId <= 0 ||
+		len([]rune(req.Source)) > 16 {
 		common.ApiErrorMsg(c, "参数错误")
 		return
 	}
-	msg, err := model.AdminBindSubscription(req.UserId, req.PlanId, "")
+	msg, err := model.AdminBindSubscription(req.UserId, req.PlanId, req.Source, "")
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -389,7 +391,8 @@ func AdminListUserSubscriptions(c *gin.Context) {
 }
 
 type AdminCreateUserSubscriptionRequest struct {
-	PlanId int `json:"plan_id"`
+	PlanId int    `json:"plan_id"`
+	Source string `json:"source"` // 可选：外部系统标识（如 "钱喵"）；空 = admin
 }
 
 type AdminResetSubscriptionRequest struct {
@@ -426,11 +429,12 @@ func AdminCreateUserSubscription(c *gin.Context) {
 		return
 	}
 	var req AdminCreateUserSubscriptionRequest
-	if err := c.ShouldBindJSON(&req); err != nil || req.PlanId <= 0 {
+	if err := c.ShouldBindJSON(&req); err != nil || req.PlanId <= 0 ||
+		len([]rune(req.Source)) > 16 {
 		common.ApiErrorMsg(c, "参数错误")
 		return
 	}
-	msg, err := model.AdminBindSubscription(userId, req.PlanId, "")
+	msg, err := model.AdminBindSubscription(userId, req.PlanId, req.Source, "")
 	if err != nil {
 		common.ApiError(c, err)
 		return

@@ -717,9 +717,13 @@ func ExpireSubscriptionOrder(tradeNo string, expectedPaymentProvider string) err
 }
 
 // Admin bind (no payment). Creates a UserSubscription from a plan.
-func AdminBindSubscription(userId int, planId int, sourceNote string) (string, error) {
+// source 为空时记 "admin"；外部系统（如钱喵小程序）可传自身标识（如 "钱喵"）作为订阅来源。
+func AdminBindSubscription(userId int, planId int, source, sourceNote string) (string, error) {
 	if userId <= 0 || planId <= 0 {
 		return "", errors.New("invalid userId or planId")
+	}
+	if source == "" {
+		source = "admin"
 	}
 	plan, err := GetSubscriptionPlanById(planId)
 	if err != nil {
@@ -732,7 +736,7 @@ func AdminBindSubscription(userId int, planId int, sourceNote string) (string, e
 		if err := lockForUpdate(tx).Select("id").Where("id = ?", userId).First(&userRow).Error; err != nil {
 			return err
 		}
-		subscription, err := CreateUserSubscriptionFromPlanTx(tx, userId, plan, "admin", "")
+		subscription, err := CreateUserSubscriptionFromPlanTx(tx, userId, plan, source, "")
 		if err == nil {
 			groupChanged = subscription.PrevUserGroup != ""
 		}

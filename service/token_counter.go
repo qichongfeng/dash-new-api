@@ -3,6 +3,7 @@ package service
 import (
 	"errors"
 	"fmt"
+	"io"
 	"math"
 	"path/filepath"
 	"strings"
@@ -209,7 +210,15 @@ func CountRequestToken(c *gin.Context, meta *types.TokenCountMeta, info *relayco
 			ext := filepath.Ext(fileHeader.Filename)
 			duration, err := common.GetAudioDuration(c.Request.Context(), file, ext)
 			if err != nil {
-				return 0, fmt.Errorf("error getting audio duration: %v", err)
+				// 时长解析失败（如模拟器把 webm 内容存成 .mp3、或容器解析受限）：
+				// whisper 本身支持这些输入，计费估算不该挡掉合法转写——
+				// 按 48kbps 比特率用文件大小估时长兜底（对齐 TTS 处理的降级思路）。
+				size := int64(0)
+				if end, seekErr := file.Seek(0, io.SeekEnd); seekErr == nil {
+					size = end
+				}
+				duration = float64(size) / 6000.0
+				logger.LogWarn(c, fmt.Sprintf("audio duration parse failed (%v), estimated %.1fs from %d bytes", err, duration, size))
 			}
 			// duration 来自用户上传文件的元数据，可被伪造成天文数字或负数。
 			// 负值会让 token 估算变成负数（低估预扣费），先钳到 0 再转换。

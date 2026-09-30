@@ -19,3 +19,12 @@ type CfAudioResponse struct {
 type CfSTTResult struct {
 	Text string `json:"text"`
 }
+
+// CfVisionResponse /ai/run/<moondream>（Image-to-Text）的响应，query 任务取 answer。
+type CfVisionResponse struct {
+	Result CfVisionResult `json:"result"`
+}
+
+type CfVisionResult struct {
+	Answer string `json:"answer"`
+}

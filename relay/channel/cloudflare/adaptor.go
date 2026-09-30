@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/relay/channel"
@@ -35,17 +36,25 @@ func (a *Adaptor) ConvertClaudeRequest(*gin.Context, *relaycommon.RelayInfo, *dt
 func (a *Adaptor) Init(info *relaycommon.RelayInfo) {
 }
 
+// isCfVisionModel CF 上的 Image-to-Text 模型（moondream 系）：OpenAI 兼容 chat 端点
+// 不支持它们（上游直接 400），需转原生 /ai/run/{task,image,question}。
+func isCfVisionModel(upstreamModelName string) bool {
+	return strings.HasPrefix(upstreamModelName, "@cf/moondream/")
+}
+
 func (a *Adaptor) GetRequestURL(info *relaycommon.RelayInfo) (string, error) {
 	switch info.RelayMode {
 	case constant.RelayModeChatCompletions:
+		if isCfVisionModel(info.UpstreamModelName) {
+			break // moondream：落到下方原生 /ai/run/
+		}
 		return fmt.Sprintf("%s/client/v4/accounts/%s/ai/v1/chat/completions", info.ChannelBaseUrl, info.ApiVersion), nil
 	case constant.RelayModeEmbeddings:
 		return fmt.Sprintf("%s/client/v4/accounts/%s/ai/v1/embeddings", info.ChannelBaseUrl, info.ApiVersion), nil
 	case constant.RelayModeResponses:
 		return fmt.Sprintf("%s/client/v4/accounts/%s/ai/v1/responses", info.ChannelBaseUrl, info.ApiVersion), nil
-	default:
-		return fmt.Sprintf("%s/client/v4/accounts/%s/ai/run/%s", info.ChannelBaseUrl, info.ApiVersion, info.UpstreamModelName), nil
 	}
+	return fmt.Sprintf("%s/client/v4/accounts/%s/ai/run/%s", info.ChannelBaseUrl, info.ApiVersion, info.UpstreamModelName), nil
 }
 
 func (a *Adaptor) SetupRequestHeader(c *gin.Context, req *http.Header, info *relaycommon.RelayInfo) error {
@@ -62,8 +71,39 @@ func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayIn
 	case constant.RelayModeCompletions:
 		return convertCf2CompletionsRequest(*request), nil
 	default:
+		// moondream 系（Image-to-Text）：messages + image_url 转原生 {task,image,question}
+		if info.RelayMode == constant.RelayModeChatCompletions && isCfVisionModel(info.UpstreamModelName) {
+			return convertCfVisionRequest(request)
+		}
 		return request, nil
 	}
+}
+
+// convertCfVisionRequest chat 视觉请求 → moondream 原生输入：task=query，
+// image 取第一个 image_url（CF 接受公共 HTTPS URL 或 base64 data URI），
+// question 为全部文本内容拼接（system/多段 text 合成一个提问）。
+func convertCfVisionRequest(request *dto.GeneralOpenAIRequest) (any, error) {
+	var image string
+	texts := make([]string, 0, 2)
+	for i := range request.Messages {
+		for _, item := range request.Messages[i].ParseContent() {
+			if item.Type == "image_url" {
+				if img := item.GetImageMedia(); img != nil && image == "" {
+					image = img.Url
+				}
+			} else if item.Type == "text" && item.Text != "" {
+				texts = append(texts, item.Text)
+			}
+		}
+	}
+	if image == "" {
+		return nil, errors.New("vision request requires an image_url")
+	}
+	return map[string]any{
+		"task":     "query",
+		"image":    image,
+		"question": strings.Join(texts, "\n"),
+	}, nil
 }
 
 func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.OpenAIResponsesRequest) (any, error) {
@@ -131,9 +171,13 @@ func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycom
 	case constant.RelayModeEmbeddings:
 		fallthrough
 	case constant.RelayModeChatCompletions:
-		if info.IsStream {
+		switch {
+		case info.IsStream:
 			err, usage = cfStreamHandler(c, info, resp)
-		} else {
+		case isCfVisionModel(info.UpstreamModelName):
+			// moondream：原生 /ai/run/ 响应转 chat completion（客户端视觉调用为非流式）
+			err, usage = cfVisionHandler(c, info, resp)
+		default:
 			err, usage = cfHandler(c, info, resp)
 		}
 	case constant.RelayModeResponses:

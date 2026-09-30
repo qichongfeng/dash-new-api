@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relay/helper"
@@ -144,5 +145,39 @@ func cfSTTHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Respon
 	_, _ = c.Writer.Write(jsonResponse)
 
 	usage := service.ResponseText2Usage(c, cfResp.Result.Text, info.UpstreamModelName, info.GetEstimatePromptTokens())
+	return nil, usage
+}
+
+// cfVisionHandler /ai/run/<moondream>（task=query）响应 {result:{answer}} →
+// 包装成 OpenAI chat completion 返回，客户端（视觉识别）按标准格式取 content。
+func cfVisionHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response) (*types.NewAPIError, *dto.Usage) {
+	var cfResp CfVisionResponse
+	responseBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return types.NewError(err, types.ErrorCodeBadResponseBody), nil
+	}
+	service.CloseResponseBodyGracefully(resp)
+	if err := json.Unmarshal(responseBody, &cfResp); err != nil {
+		return types.NewError(err, types.ErrorCodeBadResponseBody), nil
+	}
+
+	answer := cfResp.Result.Answer
+	usage := service.ResponseText2Usage(c, answer, info.UpstreamModelName, info.GetEstimatePromptTokens())
+	response := dto.TextResponse{
+		Id:      helper.GetResponseID(c),
+		Object:  "chat.completion",
+		Created: common.GetTimestamp(),
+		Model:   info.UpstreamModelName,
+		Choices: []dto.OpenAITextResponseChoice{{Message: dto.Message{Role: "assistant"}}},
+		Usage:   *usage,
+	}
+	response.Choices[0].SetStringContent(answer)
+	jsonResponse, err := json.Marshal(response)
+	if err != nil {
+		return types.NewError(err, types.ErrorCodeBadResponseBody), nil
+	}
+	c.Writer.Header().Set("Content-Type", "application/json")
+	c.Writer.WriteHeader(resp.StatusCode)
+	_, _ = c.Writer.Write(jsonResponse)
 	return nil, usage
 }

@@ -1,3 +1,4 @@
+import type { TFunction } from 'i18next'
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -6,7 +7,9 @@ import {
   getPlanFormSchema,
   planToFormValues,
 } from '../plan-form'
-import type { SubscriptionPlan } from '../types'
+import type { SubscriptionPlan } from '../../types'
+
+const t = ((key: string) => key) as unknown as TFunction
 
 const basePlan: SubscriptionPlan = {
   id: 1,
@@ -26,9 +29,7 @@ const basePlan: SubscriptionPlan = {
 describe('plan form currency handling', () => {
   it('defaults and schema carry no currency field so plans stay USD on the server', () => {
     expect('currency' in PLAN_FORM_DEFAULTS).toBe(false)
-    expect(
-      'currency' in getPlanFormSchema((k: string) => k).shape
-    ).toBe(false)
+    expect('currency' in getPlanFormSchema(t).shape).toBe(false)
   })
 
   it('payload omits currency for the backend to normalize', () => {

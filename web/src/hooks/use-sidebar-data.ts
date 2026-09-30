@@ -28,6 +28,7 @@ import {
   Radio,
   ServerCog,
   Settings,
+  ShieldCheck,
   Ticket,
   Users,
   CreditCard,
@@ -66,6 +67,11 @@ export function useSidebarData(): SidebarData {
             title: t('API Keys'),
             url: '/keys',
             icon: Key,
+          },
+          {
+            title: t('Security'),
+            url: '/security',
+            icon: ShieldCheck,
           },
           {
             title: t('Usage Logs'),

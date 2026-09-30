@@ -2,10 +2,10 @@ package cloudflare
 
 import (
 	"bytes"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
-	"mime/multipart"
 	"net/http"
 
 	"github.com/QuantumNous/new-api/common"
@@ -71,7 +71,8 @@ func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommo
 }
 
 func (a *Adaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, requestBody io.Reader) (any, error) {
-	// 转写走 DoFormRequest：multipart 请求需要带上 ConvertAudioRequest 里写入的 Content-Type（含 boundary）
+	// 转写走 DoFormRequest：它会把 ConvertAudioRequest 写入 c.Request 的 Content-Type
+	// （这里是 application/json）原样复制给上游请求；DoApiRequest 的 audio 分支不带 Content-Type。
 	if info.RelayMode == constant.RelayModeAudioTranscription ||
 		info.RelayMode == constant.RelayModeAudioTranslation {
 		return channel.DoFormRequest(a, c, info, requestBody)
@@ -88,10 +89,9 @@ func (a *Adaptor) ConvertEmbeddingRequest(c *gin.Context, info *relaycommon.Rela
 }
 
 func (a *Adaptor) ConvertAudioRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.AudioRequest) (io.Reader, error) {
-	// CF /ai/run/<whisper> 按 multipart（file 字段）收音频：重建 multipart 而不是透传裸字节，
-	// 并把带 boundary 的 Content-Type 写回 c.Request（DoFormRequest 会复制它）。
-	var requestBody bytes.Buffer
-	writer := multipart.NewWriter(&requestBody)
+	// CF Workers AI /ai/run/<whisper> 按 JSON 收音频：{"audio":"<base64>", "language":"zh"?}
+	//（官方 curl：-d '{"audio":"'$AUDIO_BASE64'"}'）。读取客户端 multipart 的 file 转 base64，
+	// Content-Type 写回 c.Request，经 DoFormRequest 复制给上游请求。
 	formData, err := common.ParseMultipartFormReusable(c)
 	if err != nil {
 		return nil, fmt.Errorf("error parsing multipart form: %w", err)
@@ -100,22 +100,25 @@ func (a *Adaptor) ConvertAudioRequest(c *gin.Context, info *relaycommon.RelayInf
 	if len(fileHeaders) == 0 {
 		return nil, errors.New("file is required")
 	}
-	fileHeader := fileHeaders[0]
-	file, err := fileHeader.Open()
+	file, err := fileHeaders[0].Open()
 	if err != nil {
 		return nil, fmt.Errorf("error opening audio file: %v", err)
 	}
 	defer file.Close()
-	part, err := writer.CreateFormFile("file", fileHeader.Filename)
+	raw, err := io.ReadAll(file)
 	if err != nil {
-		return nil, errors.New("create form file failed")
+		return nil, errors.New("read audio file failed")
 	}
-	if _, err := io.Copy(part, file); err != nil {
-		return nil, errors.New("copy file failed")
+	payload := map[string]any{"audio": base64.StdEncoding.EncodeToString(raw)}
+	if langs := formData.Value["language"]; len(langs) > 0 && langs[0] != "" {
+		payload["language"] = langs[0]
 	}
-	writer.Close()
-	c.Request.Header.Set("Content-Type", writer.FormDataContentType())
-	return &requestBody, nil
+	jsonBody, err := common.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+	c.Request.Header.Set("Content-Type", "application/json")
+	return bytes.NewReader(jsonBody), nil
 }
 
 func (a *Adaptor) ConvertImageRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.ImageRequest) (any, error) {

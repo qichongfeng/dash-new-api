@@ -13,10 +13,8 @@ type Announcement struct {
 
 	App   string `json:"app" gorm:"type:varchar(32);not null;index"` // 应用标识，如 qianmiao
 	Title string `json:"title" gorm:"type:varchar(128);not null"`
-	// 纯文本，换行生效（客户端按 pre-line 渲染）
+	// Markdown 原文（客户端自行解析渲染；图片以相对路径 /api/announcement/images/... 引用）
 	Content string `json:"content" gorm:"type:text"`
-	// 可选外部链接（如关联公众号文章）；客户端有值时点击直接 web-view 打开，跳过正文详情
-	LinkURL string `json:"link_url" gorm:"type:varchar(512);not null;default:''"`
 	// 沿用控制台公告的 5 类样式：default|ongoing|success|warning|error
 	Type string `json:"type" gorm:"type:varchar(16);not null;default:'default'"`
 	// unix 秒；0 = 创建即视为发布；大于当前时间为定时发布（公开接口不返回）
@@ -51,27 +49,26 @@ type AnnouncementSummary struct {
 	App         string `json:"app"`
 	Title       string `json:"title"`
 	Type        string `json:"type"`
-	LinkURL     string `json:"link_url"`
 	PublishTime int64  `json:"publish_time"`
 	CreatedAt   int64  `json:"created_at"`
 }
 
-// GetPublicAnnouncements 对外可见的公告：启用中且已到发布时间，按发布时间倒序
-func GetPublicAnnouncements(app string, pageInfo *common.PageInfo) ([]AnnouncementSummary, int64, error) {
+// GetPublicAnnouncementPage 对外可见的公告（启用且已发布），按 (publish_time, id) 倒序游标翻页。
+// beforeId > 0 表示带上 cursor 的 keyset 条件（取该条之前的数据），无 offset 翻页漂移。
+func GetPublicAnnouncementPage(app string, limit int, beforePublishTime int64, beforeId int) ([]AnnouncementSummary, error) {
 	query := DB.Model(&Announcement{}).
 		Where("app = ? AND enabled = ? AND publish_time <= ?", app, true, common.GetTimestamp())
-	var total int64
-	if err := query.Count(&total).Error; err != nil {
-		return nil, 0, err
+	if beforeId > 0 {
+		// 整体加括号：避免与外层 AND 拼接时 OR 抬升优先级
+		query = query.Where("(publish_time < ? OR (publish_time = ? AND id < ?))", beforePublishTime, beforePublishTime, beforeId)
 	}
 	var items []AnnouncementSummary
 	err := query.
-		Select("id, app, title, type, link_url, publish_time, created_at").
+		Select("id, app, title, type, publish_time, created_at").
 		Order("publish_time DESC, id DESC").
-		Limit(pageInfo.GetPageSize()).
-		Offset(pageInfo.GetStartIdx()).
+		Limit(limit).
 		Find(&items).Error
-	return items, total, err
+	return items, err
 }
 
 // GetPublicAnnouncementById 公开详情：未启用/未发布一律视为不存在

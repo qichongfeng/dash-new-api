@@ -27,7 +27,6 @@ export const announcementSchema = z.object({
   app: z.string(),
   title: z.string(),
   content: z.string(),
-  link_url: z.string().default(''),
   type: z.enum(['default', 'ongoing', 'success', 'warning', 'error']),
   publish_time: z.number(),
   enabled: z.boolean(),
@@ -54,10 +53,13 @@ export interface AnnouncementPayload {
   app: string
   title: string
   content: string
-  link_url?: string
   type: string
   publish_time: number // 0 = publish immediately
   enabled?: boolean
+}
+
+export interface AnnouncementImageUploadResult {
+  src: string // 相对路径 /api/announcement/images/<name>，可直接嵌入 Markdown
 }
 
 // Known announcement audiences; values must match the app identifiers the

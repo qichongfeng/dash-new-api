@@ -20,9 +20,9 @@ import React, { useState } from 'react'
 
 import useDialogState from '@/hooks/use-dialog'
 
-import {
-  type Announcement,
-  type AnnouncementsDialogType,
+import type {
+  Announcement,
+  AnnouncementsDialogType,
 } from '../types'
 
 type AnnouncementsContextType = {

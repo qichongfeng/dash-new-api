@@ -20,6 +20,8 @@ var (
 	PrintVersion = flag.Bool("version", false, "print version and exit")
 	PrintHelp    = flag.Bool("help", false, "print help and exit")
 	LogDir       = flag.String("log-dir", "./logs", "specify the log directory")
+	// 公告图片静态目录：上传落盘于此，由 /api/announcement/images/:name 公开读取（不进数据库）
+	AnnouncementImageDir = flag.String("announcement-image-dir", "./data/announcement-images", "specify the announcement image directory")
 )
 
 func printHelp() {
@@ -80,6 +82,16 @@ func InitEnv() {
 			if err != nil {
 				log.Fatal(err)
 			}
+		}
+	}
+	if *AnnouncementImageDir != "" {
+		var err error
+		*AnnouncementImageDir, err = filepath.Abs(*AnnouncementImageDir)
+		if err != nil {
+			log.Fatal(err)
+		}
+		if err := os.MkdirAll(*AnnouncementImageDir, 0755); err != nil {
+			log.Fatal(err)
 		}
 	}
 

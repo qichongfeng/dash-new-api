@@ -30,6 +30,7 @@ func SetApiRouter(router *gin.Engine) {
 		apiRouter.GET("/notice", controller.GetNotice)
 		// 面向外部应用（如钱喵记账小程序）的公告：免登录，app 参数区分应用
 		apiRouter.GET("/announcement/list", controller.GetAnnouncementList)
+		apiRouter.GET("/announcement/images/:name", controller.GetAnnouncementImage)
 		apiRouter.GET("/announcement/:id", controller.GetAnnouncementDetail)
 		apiRouter.GET("/user-agreement", controller.GetUserAgreement)
 		apiRouter.GET("/privacy-policy", controller.GetPrivacyPolicy)
@@ -209,6 +210,7 @@ func SetApiRouter(router *gin.Engine) {
 		{
 			announcementAdminRoute.GET("/list", controller.AdminListAnnouncements)
 			announcementAdminRoute.POST("/", controller.AdminCreateAnnouncement)
+			announcementAdminRoute.POST("/image", controller.AdminUploadAnnouncementImage)
 			announcementAdminRoute.PUT("/:id", controller.AdminUpdateAnnouncement)
 			announcementAdminRoute.PATCH("/:id/status", controller.AdminUpdateAnnouncementStatus)
 			announcementAdminRoute.DELETE("/:id", controller.AdminDeleteAnnouncement)

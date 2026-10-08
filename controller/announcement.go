@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"encoding/base64"
 	"strconv"
 	"strings"
 
@@ -20,22 +21,74 @@ var validAnnouncementTypes = map[string]bool{
 	"error":   true,
 }
 
-// GetAnnouncementList 公开列表（免登录，不含正文）
+const (
+	announcementListDefaultLimit = 20
+	announcementListMaxLimit     = 50
+)
+
+// encodeAnnouncementCursor 游标 = 上一页末条 (publish_time, id) 的 base64url("publish_time:id")，
+// 与列表排序键 (publish_time DESC, id DESC) 对应
+func encodeAnnouncementCursor(publishTime int64, id int) string {
+	return base64.RawURLEncoding.EncodeToString([]byte(strconv.FormatInt(publishTime, 10) + ":" + strconv.Itoa(id)))
+}
+
+func decodeAnnouncementCursor(cursor string) (publishTime int64, id int, err error) {
+	raw, err := base64.RawURLEncoding.DecodeString(cursor)
+	if err != nil {
+		return 0, 0, err
+	}
+	ptStr, idStr, ok := strings.Cut(string(raw), ":")
+	if !ok {
+		return 0, 0, strconv.ErrSyntax
+	}
+	publishTime, err = strconv.ParseInt(ptStr, 10, 64)
+	if err != nil {
+		return 0, 0, err
+	}
+	id, err = strconv.Atoi(idStr)
+	if err != nil {
+		return 0, 0, err
+	}
+	if publishTime <= 0 || id <= 0 {
+		return 0, 0, strconv.ErrSyntax
+	}
+	return publishTime, id, nil
+}
+
+// GetAnnouncementList 公开列表（免登录，不含正文），按 (publish_time, id) 倒序游标翻页
 func GetAnnouncementList(c *gin.Context) {
 	app := strings.TrimSpace(c.Query("app"))
 	if app == "" {
 		common.ApiErrorMsg(c, "app 参数不能为空")
 		return
 	}
-	pageInfo := common.GetPageQuery(c)
-	items, total, err := model.GetPublicAnnouncements(app, pageInfo)
+	limit, _ := strconv.Atoi(c.Query("limit"))
+	if limit <= 0 {
+		limit = announcementListDefaultLimit
+	}
+	limit = min(limit, announcementListMaxLimit)
+	var beforePublishTime int64
+	var beforeId int
+	if cursor := strings.TrimSpace(c.Query("cursor")); cursor != "" {
+		pt, id, err := decodeAnnouncementCursor(cursor)
+		if err != nil {
+			common.ApiErrorMsg(c, "cursor 参数非法")
+			return
+		}
+		beforePublishTime, beforeId = pt, id
+	}
+	items, err := model.GetPublicAnnouncementPage(app, limit, beforePublishTime, beforeId)
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
-	pageInfo.SetTotal(int(total))
-	pageInfo.SetItems(items)
-	common.ApiSuccess(c, pageInfo)
+	// 拿满一页才可能还有下一页；末页 next_cursor 为空串
+	nextCursor := ""
+	if len(items) == limit {
+		last := items[len(items)-1]
+		nextCursor = encodeAnnouncementCursor(last.PublishTime, last.Id)
+	}
+	common.ApiSuccess(c, gin.H{"items": items, "next_cursor": nextCursor})
 }
 
 // GetAnnouncementDetail 公开详情（免登录，含正文；未启用/未发布视为不存在）
@@ -70,14 +123,13 @@ func AdminListAnnouncements(c *gin.Context) {
 type AdminUpsertAnnouncementRequest struct {
 	App         string `json:"app"`
 	Title       string `json:"title"`
-	Content     string `json:"content"`
-	LinkURL     string `json:"link_url"` // 可选；有值时客户端点击直接打开该链接
+	Content     string `json:"content"` // Markdown 原文
 	Type        string `json:"type"`
 	PublishTime int64  `json:"publish_time"` // 0 = 立即发布
 	Enabled     *bool  `json:"enabled"`
 }
 
-func validateAnnouncement(app, title, content, linkURL, typ string) string {
+func validateAnnouncement(app, title, content, typ string) string {
 	if app == "" {
 		return "应用标识不能为空"
 	}
@@ -93,14 +145,6 @@ func validateAnnouncement(app, title, content, linkURL, typ string) string {
 	if len([]rune(content)) > 10000 {
 		return "公告内容不能超过10000字"
 	}
-	if linkURL != "" {
-		if !strings.HasPrefix(linkURL, "http://") && !strings.HasPrefix(linkURL, "https://") {
-			return "链接必须以 http:// 或 https:// 开头"
-		}
-		if len([]rune(linkURL)) > 512 {
-			return "链接不能超过512字"
-		}
-	}
 	if !validAnnouncementTypes[typ] {
 		return "公告类型非法"
 	}
@@ -111,12 +155,11 @@ func validateAnnouncement(app, title, content, linkURL, typ string) string {
 func normalizeAnnouncementRequest(req *AdminUpsertAnnouncementRequest) string {
 	req.App = strings.TrimSpace(req.App)
 	req.Title = strings.TrimSpace(req.Title)
-	req.LinkURL = strings.TrimSpace(req.LinkURL)
 	req.Type = strings.TrimSpace(req.Type)
 	if req.Type == "" {
 		req.Type = "default"
 	}
-	return validateAnnouncement(req.App, req.Title, req.Content, req.LinkURL, req.Type)
+	return validateAnnouncement(req.App, req.Title, req.Content, req.Type)
 }
 
 func AdminCreateAnnouncement(c *gin.Context) {
@@ -141,7 +184,6 @@ func AdminCreateAnnouncement(c *gin.Context) {
 		App:         req.App,
 		Title:       req.Title,
 		Content:     req.Content,
-		LinkURL:     req.LinkURL,
 		Type:        req.Type,
 		PublishTime: publishTime,
 		Enabled:     enabled,
@@ -184,7 +226,6 @@ func AdminUpdateAnnouncement(c *gin.Context) {
 	existing.App = req.App
 	existing.Title = req.Title
 	existing.Content = req.Content
-	existing.LinkURL = req.LinkURL
 	existing.Type = req.Type
 	existing.PublishTime = publishTime
 	if req.Enabled != nil {

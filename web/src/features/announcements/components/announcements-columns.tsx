@@ -16,8 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { type ColumnDef } from '@tanstack/react-table'
-import { Link2 } from 'lucide-react'
+import type { ColumnDef } from '@tanstack/react-table'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -26,6 +25,7 @@ import { TableId } from '@/components/table-id'
 import { formatTimestamp } from '@/lib/format'
 
 import type { Announcement } from '../types'
+import { announcementPreviewText } from '../lib/markdown-snippets'
 import { DataTableRowActions } from './data-table-row-actions'
 
 const TYPE_LABEL_KEYS: Record<Announcement['type'], string> = {
@@ -76,14 +76,9 @@ export function useAnnouncementsColumns(): ColumnDef<Announcement>[] {
         meta: { mobileTitle: true },
         cell: ({ row }) => (
           <div className='max-w-full min-w-0'>
-            <div className='flex items-center gap-1'>
-              <div className='truncate font-medium'>{row.original.title}</div>
-              {row.original.link_url ? (
-                <Link2 className='text-muted-foreground h-3.5 w-3.5 shrink-0' />
-              ) : null}
-            </div>
+            <div className='truncate font-medium'>{row.original.title}</div>
             <div className='text-muted-foreground truncate text-xs'>
-              {row.original.content}
+              {announcementPreviewText(row.original.content)}
             </div>
           </div>
         ),

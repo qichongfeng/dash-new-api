@@ -62,7 +62,6 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet'
 import { Switch } from '@/components/ui/switch'
-import { Textarea } from '@/components/ui/textarea'
 import { handleServerError } from '@/lib/handle-server-error'
 import {
   formatTimestampForInput,
@@ -71,6 +70,7 @@ import {
 
 import { createAnnouncement, updateAnnouncement } from '../api'
 import { ANNOUNCEMENT_APPS, type Announcement } from '../types'
+import { AnnouncementContentEditor } from './announcement-content-editor'
 import { useAnnouncements } from './announcements-provider'
 
 const ANNOUNCEMENT_TYPES = [
@@ -97,12 +97,6 @@ function getFormSchema(t: (key: string) => string) {
     title: z.string().min(1, t('Title is required')),
     type: z.enum(ANNOUNCEMENT_TYPES),
     publish_time: z.string(), // datetime-local value; '' = publish immediately
-    link_url: z
-      .string()
-      .refine(
-        (v) => v === '' || /^https?:\/\//.test(v),
-        t('Link must start with http:// or https://')
-      ),
     content: z.string(),
     enabled: z.boolean(),
   })
@@ -113,7 +107,6 @@ const FORM_DEFAULTS: AnnouncementFormValues = {
   title: '',
   type: 'default',
   publish_time: '',
-  link_url: '',
   content: '',
   enabled: true,
 }
@@ -150,7 +143,6 @@ export function AnnouncementsMutateDrawer({
             ? currentRow.type
             : 'default',
           publish_time: formatTimestampForInput(currentRow.publish_time),
-          link_url: currentRow.link_url || '',
           content: currentRow.content,
           enabled: currentRow.enabled,
         })
@@ -171,7 +163,6 @@ export function AnnouncementsMutateDrawer({
         app: values.app,
         title: values.title.trim(),
         content: values.content,
-        link_url: values.link_url.trim(),
         type: values.type,
         publish_time: parsed > 0 ? parsed : 0,
         enabled: values.enabled,
@@ -328,28 +319,6 @@ export function AnnouncementsMutateDrawer({
                   </FormItem>
                 )}
               />
-
-              <FormField
-                control={form.control}
-                name='link_url'
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t('Link URL')}</FormLabel>
-                    <FormControl>
-                      <Input
-                        {...field}
-                        placeholder='https://mp.weixin.qq.com/s/...'
-                      />
-                    </FormControl>
-                    <FormDescription>
-                      {t(
-                        'If set, tapping the announcement opens this URL directly; official account articles require the account to be associated with the mini-program'
-                      )}
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
             </SideDrawerSection>
 
             <SideDrawerSection>
@@ -366,11 +335,15 @@ export function AnnouncementsMutateDrawer({
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>{t('Content')}</FormLabel>
-                    <FormControl>
-                      <Textarea rows={8} {...field} />
-                    </FormControl>
+                    <AnnouncementContentEditor
+                      value={field.value}
+                      onChange={field.onChange}
+                      disabled={isSubmitting}
+                    />
                     <FormDescription>
-                      {t('Plain text; line breaks are preserved')}
+                      {t(
+                        'Markdown is supported; images are uploaded to the server and inserted inline'
+                      )}
                     </FormDescription>
                     <FormMessage />
                   </FormItem>

@@ -20,6 +20,7 @@ import { api } from '@/lib/api'
 
 import type {
   Announcement,
+  AnnouncementImageUploadResult,
   AnnouncementPageData,
   AnnouncementPayload,
   ApiResponse,
@@ -61,5 +62,14 @@ export async function patchAnnouncementStatus(
 
 export async function deleteAnnouncement(id: number): Promise<ApiResponse> {
   const res = await api.delete(`/api/announcement/admin/${id}`)
+  return res.data
+}
+
+export async function uploadAnnouncementImage(
+  dataUri: string
+): Promise<ApiResponse<AnnouncementImageUploadResult>> {
+  const res = await api.post('/api/announcement/admin/image', {
+    image: dataUri,
+  })
   return res.data
 }

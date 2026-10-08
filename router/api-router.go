@@ -28,6 +28,9 @@ func SetApiRouter(router *gin.Engine) {
 		apiRouter.GET("/models", middleware.UserAuth(), controller.DashboardListModels)
 		apiRouter.GET("/status/test", middleware.AdminAuth(), controller.TestStatus)
 		apiRouter.GET("/notice", controller.GetNotice)
+		// 面向外部应用（如钱喵记账小程序）的公告：免登录，app 参数区分应用
+		apiRouter.GET("/announcement/list", controller.GetAnnouncementList)
+		apiRouter.GET("/announcement/:id", controller.GetAnnouncementDetail)
 		apiRouter.GET("/user-agreement", controller.GetUserAgreement)
 		apiRouter.GET("/privacy-policy", controller.GetPrivacyPolicy)
 		apiRouter.GET("/about", controller.GetAbout)
@@ -198,6 +201,17 @@ func SetApiRouter(router *gin.Engine) {
 			subscriptionAdminRoute.POST("/users/:id/wechat-vpay/orders", middleware.CriticalRateLimit(), controller.AdminCreateWechatVpayOrder)
 			subscriptionAdminRoute.GET("/wechat-vpay/orders/:trade_no", controller.AdminGetWechatVpayOrder)
 			subscriptionAdminRoute.POST("/wechat-vpay/orders/:trade_no/query", controller.AdminQueryWechatVpayOrderRemote)
+		}
+
+		// Announcements for external apps (e.g. qianmiao mini-program)
+		announcementAdminRoute := apiRouter.Group("/announcement/admin")
+		announcementAdminRoute.Use(middleware.AdminAuth())
+		{
+			announcementAdminRoute.GET("/list", controller.AdminListAnnouncements)
+			announcementAdminRoute.POST("/", controller.AdminCreateAnnouncement)
+			announcementAdminRoute.PUT("/:id", controller.AdminUpdateAnnouncement)
+			announcementAdminRoute.PATCH("/:id/status", controller.AdminUpdateAnnouncementStatus)
+			announcementAdminRoute.DELETE("/:id", controller.AdminDeleteAnnouncement)
 		}
 
 		// Subscription payment callbacks (no auth)

@@ -24,6 +24,7 @@ import {
   Key,
   LayoutDashboard,
   ListTodo,
+  Megaphone,
   PlugZap,
   Radio,
   ServerCog,
@@ -120,6 +121,11 @@ export function useSidebarData(): SidebarData {
             title: t('Subscriptions'),
             url: '/subscriptions',
             icon: CreditCard,
+          },
+          {
+            title: t('Announcements'),
+            url: '/announcements',
+            icon: Megaphone,
           },
           {
             title: t('System Info'),

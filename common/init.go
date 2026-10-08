@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"time"
@@ -33,6 +34,13 @@ func printHelp() {
 
 func InitEnv() {
 	flag.Parse()
+
+	// 内存软上限兜底：未显式设 GOMEMLIMIT 时压一档 GC 目标，让峰值后
+	// 的堆高水位尽快回落（软上限，超限只会更积极 GC，不会 OOM/panic）。
+	// 实测稳态 RSS ~50MB（运行时底噪 ~35MB + 常驻堆 ~15MB）。
+	if os.Getenv("GOMEMLIMIT") == "" {
+		debug.SetMemoryLimit(64 << 20)
+	}
 
 	envVersion := os.Getenv("VERSION")
 	if envVersion != "" {

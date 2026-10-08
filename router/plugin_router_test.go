@@ -17,6 +17,7 @@ import (
 	"github.com/QuantumNous/new-api/middleware"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/jsplugin"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-contrib/gzip"
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
@@ -879,9 +880,12 @@ export function parseTaskResult() { return {}; }
 `, key, key, version, routes)
 }
 
-func performPluginRequest(handler http.Handler, method, path string) *httptest.ResponseRecorder {
+func performPluginRequest(handler http.Handler, method, path string, cookies ...*http.Cookie) *httptest.ResponseRecorder {
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(method, path, strings.NewReader(""))
+	for _, cookie := range cookies {
+		request.AddCookie(cookie)
+	}
 	handler.ServeHTTP(recorder, request)
 	return recorder
 }
@@ -898,7 +902,8 @@ func TestWebFallbackDoesNotCacheMissingAPIOrAssets(t *testing.T) {
 			assert.NotContains(t, response.Header().Get("Cache-Control"), "604800")
 		})
 	}
-	page := performPluginRequest(outer, http.MethodGet, "/security")
+	// 页面兜底走 WebPageGate：带上会话提示 cookie 才会回落到 SPA index。
+	page := performPluginRequest(outer, http.MethodGet, "/security", &http.Cookie{Name: service.SessionHintCookieName, Value: "1"})
 	assert.Equal(t, http.StatusOK, page.Code)
 	assert.Equal(t, "dashboard", page.Body.String())
 	assert.Equal(t, "no-cache", page.Header().Get("Cache-Control"))

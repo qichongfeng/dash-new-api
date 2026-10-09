@@ -181,10 +181,15 @@ func convertCfLlamaVisionRequest(request *dto.GeneralOpenAIRequest) (any, error)
 	for i, b := range raw {
 		ints[i] = int(b)
 	}
-	return map[string]any{
+	payload := map[string]any{
 		"prompt": strings.Join(texts, "\n"),
 		"image":  ints,
-	}, nil
+	}
+	// 上游默认 max_tokens 仅 256，长票据的 JSON 输出会被截在字符串中途；透传客户端设定
+	if maxTokens := request.GetMaxTokens(); maxTokens > 0 {
+		payload["max_tokens"] = maxTokens
+	}
+	return payload, nil
 }
 
 func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.OpenAIResponsesRequest) (any, error) {

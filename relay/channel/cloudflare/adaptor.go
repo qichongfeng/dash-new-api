@@ -43,12 +43,12 @@ const (
 	cfVisionProtocolLlama     = "llama-vision"
 )
 
-// cfVisionProtocol 查渠道设置的 vision_protocols 表，返回该上游模型的视觉协议：
-// ""（未配置）= 普通模型走 OpenAI 兼容端点；moondream / llama-vision = 该协议的
-// 原生 /ai/run/ 转换。模型与协议的对应关系完全由渠道配置决定，适配层不内置
-// 模型清单（Cloudflare 的 OpenAI 兼容端点不支持 image_url，这些模型必须转原生）。
+// cfVisionProtocol 查渠道设置(settings)的 vision_protocols 表，返回该上游模型的
+// 视觉协议：""（未配置）= 普通模型走 OpenAI 兼容端点；moondream / llama-vision =
+// 该协议的原生 /ai/run/ 转换。模型与协议的对应关系完全由渠道配置决定，适配层
+// 不内置模型清单（CF 的 OpenAI 兼容端点不支持 image_url，这些模型必须转原生）。
 func cfVisionProtocol(info *relaycommon.RelayInfo) string {
-	return info.ChannelSetting.VisionProtocols[info.UpstreamModelName]
+	return info.ChannelOtherSettings.VisionProtocols[info.UpstreamModelName]
 }
 
 func (a *Adaptor) GetRequestURL(info *relaycommon.RelayInfo) (string, error) {

@@ -35,6 +35,13 @@ export async function getAnnouncements(params?: {
   return res.data
 }
 
+export async function getAnnouncementDetail(
+  id: number
+): Promise<ApiResponse<Announcement>> {
+  const res = await api.get(`/api/announcement/admin/${id}`)
+  return res.data
+}
+
 export async function createAnnouncement(
   data: AnnouncementPayload
 ): Promise<ApiResponse<Announcement>> {

@@ -27,11 +27,11 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 
-import type { Announcement } from '../types'
+import type { AnnouncementListItem } from '../types'
 import { useAnnouncements } from './announcements-provider'
 
 interface DataTableRowActionsProps {
-  row: Row<Announcement>
+  row: Row<AnnouncementListItem>
 }
 
 export function DataTableRowActions({ row }: DataTableRowActionsProps) {

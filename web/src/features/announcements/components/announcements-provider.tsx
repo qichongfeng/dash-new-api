@@ -21,15 +21,18 @@ import React, { useState } from 'react'
 import useDialogState from '@/hooks/use-dialog'
 
 import type {
-  Announcement,
+  AnnouncementListItem,
   AnnouncementsDialogType,
 } from '../types'
 
 type AnnouncementsContextType = {
   open: AnnouncementsDialogType | null
   setOpen: (str: AnnouncementsDialogType | null) => void
-  currentRow: Announcement | null
-  setCurrentRow: React.Dispatch<React.SetStateAction<Announcement | null>>
+  // 列表行（不含正文）；编辑抽屉打开时自行拉详情
+  currentRow: AnnouncementListItem | null
+  setCurrentRow: React.Dispatch<
+    React.SetStateAction<AnnouncementListItem | null>
+  >
   refreshTrigger: number
   triggerRefresh: () => void
   appFilter: string // '' = all apps
@@ -45,7 +48,9 @@ export function AnnouncementsProvider({
   children: React.ReactNode
 }) {
   const [open, setOpen] = useDialogState<AnnouncementsDialogType>(null)
-  const [currentRow, setCurrentRow] = useState<Announcement | null>(null)
+  const [currentRow, setCurrentRow] = useState<AnnouncementListItem | null>(
+    null
+  )
   const [refreshTrigger, setRefreshTrigger] = useState(0)
   const [appFilter, setAppFilter] = useState('')
 

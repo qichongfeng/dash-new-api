@@ -24,11 +24,10 @@ import { StatusBadge } from '@/components/status-badge'
 import { TableId } from '@/components/table-id'
 import { formatTimestamp } from '@/lib/format'
 
-import type { Announcement } from '../types'
-import { announcementPreviewText } from '../lib/markdown-snippets'
+import type { AnnouncementListItem } from '../types'
 import { DataTableRowActions } from './data-table-row-actions'
 
-const TYPE_LABEL_KEYS: Record<Announcement['type'], string> = {
+const TYPE_LABEL_KEYS: Record<AnnouncementListItem['type'], string> = {
   default: 'Default',
   ongoing: 'Ongoing',
   success: 'Success',
@@ -36,7 +35,7 @@ const TYPE_LABEL_KEYS: Record<Announcement['type'], string> = {
   error: 'Error',
 }
 
-const TYPE_BADGE_VARIANTS: Record<Announcement['type'], string> = {
+const TYPE_BADGE_VARIANTS: Record<AnnouncementListItem['type'], string> = {
   default: 'neutral',
   ongoing: 'info',
   success: 'success',
@@ -44,11 +43,11 @@ const TYPE_BADGE_VARIANTS: Record<Announcement['type'], string> = {
   error: 'danger',
 }
 
-export function useAnnouncementsColumns(): ColumnDef<Announcement>[] {
+export function useAnnouncementsColumns(): ColumnDef<AnnouncementListItem>[] {
   const { t } = useTranslation()
 
   return useMemo(
-    (): ColumnDef<Announcement>[] => [
+    (): ColumnDef<AnnouncementListItem>[] => [
       {
         accessorKey: 'id',
         header: t('ID'),
@@ -75,11 +74,8 @@ export function useAnnouncementsColumns(): ColumnDef<Announcement>[] {
         header: t('Title'),
         meta: { mobileTitle: true },
         cell: ({ row }) => (
-          <div className='max-w-full min-w-0'>
-            <div className='truncate font-medium'>{row.original.title}</div>
-            <div className='text-muted-foreground truncate text-xs'>
-              {announcementPreviewText(row.original.content)}
-            </div>
+          <div className='max-w-full min-w-0 truncate font-medium'>
+            {row.original.title}
           </div>
         ),
         size: 260,

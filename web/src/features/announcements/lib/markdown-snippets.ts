@@ -16,7 +16,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { getPreviewText } from '@/features/dashboard/lib/text'
 
 /**
  * 在 textarea 选区处插入片段，返回新文本与插入后光标位置。
@@ -87,13 +86,4 @@ export function prefixLines(
   const prefixed = lines.map((line) => (line.startsWith(prefix) ? line : prefix + line))
   const next = value.slice(0, lineStart) + prefixed.join('\n') + value.slice(lineEnd)
   return { value: next, cursorStart: lineStart, cursorEnd: lineStart + prefixed.join('\n').length }
-}
-
-/**
- * 列表副标题预览：先剥掉 Markdown 图片/链接语法（保留链接文字），
- * 再交给通用 getPreviewText 去标记截断。
- */
-export function announcementPreviewText(content: string, maxLength = 60): string {
-  const withoutLinks = content.replaceAll(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
-  return getPreviewText(withoutLinks, maxLength)
 }

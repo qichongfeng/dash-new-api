@@ -68,8 +68,12 @@ import {
   parseTimestampFromInput,
 } from '@/lib/format'
 
-import { createAnnouncement, updateAnnouncement } from '../api'
-import { ANNOUNCEMENT_APPS, type Announcement } from '../types'
+import {
+  createAnnouncement,
+  getAnnouncementDetail,
+  updateAnnouncement,
+} from '../api'
+import { ANNOUNCEMENT_APPS, type AnnouncementListItem } from '../types'
 import { AnnouncementContentEditor } from './announcement-content-editor'
 import { useAnnouncements } from './announcements-provider'
 
@@ -114,7 +118,7 @@ const FORM_DEFAULTS: AnnouncementFormValues = {
 interface Props {
   open: boolean
   onOpenChange: (open: boolean) => void
-  currentRow?: Announcement
+  currentRow?: AnnouncementListItem
 }
 
 export function AnnouncementsMutateDrawer({
@@ -126,6 +130,8 @@ export function AnnouncementsMutateDrawer({
   const isEdit = !!currentRow?.id
   const { triggerRefresh } = useAnnouncements()
   const [isSubmitting, setIsSubmitting] = useState(false)
+  // 编辑时正文等详情异步装载，装载中禁提交防半数据保存
+  const [loadingDetail, setLoadingDetail] = useState(false)
 
   const schema = getFormSchema(t)
   const form = useForm<AnnouncementFormValues>({
@@ -134,23 +140,62 @@ export function AnnouncementsMutateDrawer({
   })
 
   useEffect(() => {
-    if (open) {
-      if (currentRow) {
-        form.reset({
-          app: currentRow.app,
-          title: currentRow.title,
-          type: ANNOUNCEMENT_TYPES.includes(currentRow.type)
-            ? currentRow.type
-            : 'default',
-          publish_time: formatTimestampForInput(currentRow.publish_time),
-          content: currentRow.content,
-          enabled: currentRow.enabled,
-        })
-      } else {
-        form.reset(FORM_DEFAULTS)
-      }
+    if (!open) {
+      return
     }
-  }, [open, currentRow, form])
+    if (!currentRow) {
+      form.reset(FORM_DEFAULTS)
+      return
+    }
+    // 列表行不含正文：先用已有字段落表单，再拉详情补 content
+    let cancelled = false
+    form.reset({
+      app: currentRow.app,
+      title: currentRow.title,
+      type: ANNOUNCEMENT_TYPES.includes(currentRow.type)
+        ? currentRow.type
+        : 'default',
+      publish_time: formatTimestampForInput(currentRow.publish_time),
+      content: '',
+      enabled: currentRow.enabled,
+    })
+    setLoadingDetail(true)
+    void getAnnouncementDetail(currentRow.id)
+      .then((res) => {
+        if (cancelled) {
+          return
+        }
+        if (!res.success || !res.data) {
+          handleServerError(res, t('Failed to load announcement'))
+          onOpenChange(false)
+          return
+        }
+        form.reset({
+          app: res.data.app,
+          title: res.data.title,
+          type: ANNOUNCEMENT_TYPES.includes(res.data.type)
+            ? res.data.type
+            : 'default',
+          publish_time: formatTimestampForInput(res.data.publish_time),
+          content: res.data.content,
+          enabled: res.data.enabled,
+        })
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          handleServerError(error, t('Failed to load announcement'))
+          onOpenChange(false)
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoadingDetail(false)
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [open, currentRow, form, t, onOpenChange])
 
   const onSubmit = async (values: AnnouncementFormValues) => {
     setIsSubmitting(true)
@@ -338,7 +383,7 @@ export function AnnouncementsMutateDrawer({
                     <AnnouncementContentEditor
                       value={field.value}
                       onChange={field.onChange}
-                      disabled={isSubmitting}
+                      disabled={isSubmitting || loadingDetail}
                     />
                     <FormDescription>
                       {t(
@@ -382,7 +427,7 @@ export function AnnouncementsMutateDrawer({
           <Button
             form='announcement-form'
             type='submit'
-            disabled={isSubmitting}
+            disabled={isSubmitting || loadingDetail}
           >
             {isSubmitting ? t('Saving...') : t('Save changes')}
           </Button>

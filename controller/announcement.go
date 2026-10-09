@@ -120,6 +120,25 @@ func AdminListAnnouncements(c *gin.Context) {
 	common.ApiSuccess(c, pageInfo)
 }
 
+// AdminGetAnnouncementDetail 管理侧详情（含 Content 正文，编辑表单用）
+func AdminGetAnnouncementDetail(c *gin.Context) {
+	id, _ := strconv.Atoi(c.Param("id"))
+	if id <= 0 {
+		common.ApiErrorMsg(c, "无效的ID")
+		return
+	}
+	a, err := model.GetAnnouncementById(id)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if a == nil {
+		common.ApiErrorMsg(c, "公告不存在")
+		return
+	}
+	common.ApiSuccess(c, a)
+}
+
 type AdminUpsertAnnouncementRequest struct {
 	App         string `json:"app"`
 	Title       string `json:"title"`

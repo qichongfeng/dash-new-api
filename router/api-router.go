@@ -209,6 +209,7 @@ func SetApiRouter(router *gin.Engine) {
 		announcementAdminRoute.Use(middleware.AdminAuth())
 		{
 			announcementAdminRoute.GET("/list", controller.AdminListAnnouncements)
+			announcementAdminRoute.GET("/:id", controller.AdminGetAnnouncementDetail)
 			announcementAdminRoute.POST("/", controller.AdminCreateAnnouncement)
 			announcementAdminRoute.POST("/image", controller.AdminUploadAnnouncementImage)
 			announcementAdminRoute.PUT("/:id", controller.AdminUpdateAnnouncement)

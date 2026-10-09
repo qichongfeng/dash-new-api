@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -158,17 +159,17 @@ func TestGetAnnouncementListCursorPagination(t *testing.T) {
 	resp := callAnnouncementList(t, "")
 	assert.False(t, resp.Success)
 
-	// 非法 cursor
-	resp = callAnnouncementList(t, "app=qianmiao&cursor=%%%")
+	// 非法 cursor（"!!!" 不经 URL 编码变形，且非合法 base64url）
+	resp = callAnnouncementList(t, "app=qianmiao&cursor=!!!bad-cursor!!!")
 	assert.False(t, resp.Success)
 	assert.Equal(t, "cursor 参数非法", resp.Message)
 
-	// 首页
+	// 首页（t2/t4 的 publish_time 并列，id 大者在前）
 	resp = callAnnouncementList(t, "app=qianmiao&limit=2")
 	assert.True(t, resp.Success)
 	require.Len(t, resp.Data.Items, 2)
-	assert.Equal(t, byTitle["t2"], resp.Data.Items[0].Id)
-	assert.Equal(t, byTitle["t4"], resp.Data.Items[1].Id)
+	assert.Equal(t, byTitle["t4"], resp.Data.Items[0].Id)
+	assert.Equal(t, byTitle["t2"], resp.Data.Items[1].Id)
 	assert.NotEmpty(t, resp.Data.NextCursor)
 
 	// 第二页（含并列 publish_time 的 keyset 边界）
@@ -189,4 +190,31 @@ func TestGetAnnouncementListCursorPagination(t *testing.T) {
 	assert.True(t, resp.Success)
 	assert.Len(t, resp.Data.Items, 4)
 	assert.Empty(t, resp.Data.NextCursor)
+}
+
+func TestAdminListOmitsContentButDetailIncludesIt(t *testing.T) {
+	setupAnnouncementControllerTest(t)
+	gin.SetMode(gin.TestMode)
+	content := "# 正文标题\n\n![](/api/announcement/images/a.png)"
+	created := model.Announcement{App: "qianmiao", Title: "t", Content: content, Type: "default", PublishTime: 100, Enabled: true}
+	require.NoError(t, model.DB.Create(&created).Error)
+
+	// 管理列表：不含 content 正文，带管理面需要的状态字段
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("GET", "/api/announcement/admin/list", nil)
+	AdminListAnnouncements(c)
+	body := w.Body.String()
+	assert.Contains(t, body, `"title":"t"`)
+	assert.Contains(t, body, `"enabled":true`)
+	assert.NotContains(t, body, "正文标题")
+	assert.NotContains(t, body, `"content"`)
+
+	// 管理详情：含 content（编辑表单用）
+	w2 := httptest.NewRecorder()
+	c2, _ := gin.CreateTestContext(w2)
+	c2.Params = append(c2.Params, gin.Param{Key: "id", Value: strconv.Itoa(created.Id)})
+	c2.Request = httptest.NewRequest("GET", "/api/announcement/admin/"+strconv.Itoa(created.Id), nil)
+	AdminGetAnnouncementDetail(c2)
+	assert.Contains(t, w2.Body.String(), "正文标题")
 }

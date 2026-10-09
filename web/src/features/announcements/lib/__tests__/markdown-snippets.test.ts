@@ -18,12 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { describe, expect, test } from 'vitest'
 
-import {
-  announcementPreviewText,
-  insertSnippet,
-  prefixLines,
-  wrapSelection,
-} from '../markdown-snippets'
+import { insertSnippet, prefixLines, wrapSelection } from '../markdown-snippets'
 
 describe('insertSnippet', () => {
   test('inline snippet replaces the selection without padding', () => {
@@ -101,20 +96,5 @@ describe('prefixLines', () => {
   test('handles the last line without a trailing newline', () => {
     const r = prefixLines('x\ny', 2, 2, '- ')
     expect(r.value).toBe('x\n- y')
-  })
-})
-
-describe('announcementPreviewText', () => {
-  test('drops image syntax and keeps only link text', () => {
-    const content = '升级说明 ![](/api/announcement/images/abc.png) 及 [文档](https://example.com)'
-    expect(announcementPreviewText(content)).toBe('升级说明  及 文档')
-  })
-
-  test('strips heading and emphasis markers like the shared preview helper', () => {
-    expect(announcementPreviewText('## **重要** 更新')).toBe('重要 更新')
-  })
-
-  test('empty content yields an empty preview', () => {
-    expect(announcementPreviewText('')).toBe('')
   })
 })

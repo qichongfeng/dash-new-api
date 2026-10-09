@@ -53,6 +53,14 @@ type AnnouncementSummary struct {
 	CreatedAt   int64  `json:"created_at"`
 }
 
+// AdminAnnouncementSummary 管理列表项：同样不带 Content（正文走详情接口），
+// 额外带管理面需要的状态与更新时间
+type AdminAnnouncementSummary struct {
+	AnnouncementSummary
+	Enabled   bool  `json:"enabled"`
+	UpdatedAt int64 `json:"updated_at"`
+}
+
 // GetPublicAnnouncementPage 对外可见的公告（启用且已发布），按 (publish_time, id) 倒序游标翻页。
 // beforeId > 0 表示带上 cursor 的 keyset 条件（取该条之前的数据），无 offset 翻页漂移。
 func GetPublicAnnouncementPage(app string, limit int, beforePublishTime int64, beforeId int) ([]AnnouncementSummary, error) {
@@ -88,8 +96,9 @@ func GetPublicAnnouncementById(id int) (*Announcement, error) {
 	return &a, nil
 }
 
-// GetAdminAnnouncements 管理列表：app 为空时返回全部应用，含停用与未发布
-func GetAdminAnnouncements(app string, pageInfo *common.PageInfo) ([]Announcement, int64, error) {
+// GetAdminAnnouncements 管理列表：app 为空时返回全部应用，含停用与未发布；
+// 不查 Content 正文（编辑时走 GetAnnouncementById 详情）
+func GetAdminAnnouncements(app string, pageInfo *common.PageInfo) ([]AdminAnnouncementSummary, int64, error) {
 	query := DB.Model(&Announcement{})
 	if app != "" {
 		query = query.Where("app = ?", app)
@@ -98,8 +107,9 @@ func GetAdminAnnouncements(app string, pageInfo *common.PageInfo) ([]Announcemen
 	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
-	var items []Announcement
+	var items []AdminAnnouncementSummary
 	err := query.
+		Select("id, app, title, type, publish_time, created_at, enabled, updated_at").
 		Order("publish_time DESC, id DESC").
 		Limit(pageInfo.GetPageSize()).
 		Offset(pageInfo.GetStartIdx()).

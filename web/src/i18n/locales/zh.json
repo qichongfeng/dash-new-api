@@ -15,6 +15,7 @@
     "Create Announcement": "新建公告",
     "Disabled announcements are hidden from the app but kept in the list": "停用的公告不再下发给应用，但会保留在列表中",
     "e.g. New version released": "例如：新版本上线",
+    "Failed to load announcement": "公告加载失败",
     "Heading": "标题",
     "Image exceeds the 5 MiB limit.": "图片不能超过 5MB",
     "Image must be a PNG, JPG, GIF or WebP file.": "图片必须为 PNG、JPG、GIF 或 WebP 格式",

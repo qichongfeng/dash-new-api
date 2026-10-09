@@ -36,6 +36,20 @@ export const announcementSchema = z.object({
 
 export type Announcement = z.infer<typeof announcementSchema>
 
+// 列表行：列表接口不返回正文（content），编辑时另拉详情
+export const announcementListItemSchema = z.object({
+  id: z.number(),
+  app: z.string(),
+  title: z.string(),
+  type: z.enum(['default', 'ongoing', 'success', 'warning', 'error']),
+  publish_time: z.number(),
+  enabled: z.boolean(),
+  created_at: z.number(),
+  updated_at: z.number(),
+})
+
+export type AnnouncementListItem = z.infer<typeof announcementListItemSchema>
+
 export interface ApiResponse<T = unknown> {
   success: boolean
   message?: string
@@ -46,7 +60,7 @@ export interface AnnouncementPageData {
   page: number
   page_size: number
   total: number
-  items: Announcement[]
+  items: AnnouncementListItem[]
 }
 
 export interface AnnouncementPayload {

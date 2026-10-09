@@ -37,29 +37,25 @@ func (a *Adaptor) ConvertClaudeRequest(*gin.Context, *relaycommon.RelayInfo, *dt
 func (a *Adaptor) Init(info *relaycommon.RelayInfo) {
 }
 
-// isCfVisionModel CF 上需要走原生 /ai/run/ 的视觉模型：OpenAI 兼容 chat 端点
-// 不支持 image_url 混合 content（上游直接 400 或静默丢图）。按模型家族前缀识别，
-// 不绑定具体模型 ID。
-func isCfVisionModel(upstreamModelName string) bool {
-	return isCfMoondreamModel(upstreamModelName) || isCfLlamaVisionModel(upstreamModelName)
-}
+// CF 视觉协议取值：渠道设置 vision_protocols 的 value
+const (
+	cfVisionProtocolMoondream = "moondream"
+	cfVisionProtocolLlama     = "llama-vision"
+)
 
-func isCfMoondreamModel(upstreamModelName string) bool {
-	return strings.HasPrefix(upstreamModelName, "@cf/moondream/")
-}
-
-// isCfLlamaVisionModel llama-3.2 vision 系（11b/90b…）：原生 /ai/run 收
-// {prompt, image:[字节数组]}（实测 data URI/URL 字符串均不识别）
-func isCfLlamaVisionModel(upstreamModelName string) bool {
-	return strings.HasPrefix(upstreamModelName, "@cf/meta/llama-3.2-") &&
-		strings.Contains(upstreamModelName, "vision")
+// cfVisionProtocol 查渠道设置的 vision_protocols 表，返回该上游模型的视觉协议：
+// ""（未配置）= 普通模型走 OpenAI 兼容端点；moondream / llama-vision = 该协议的
+// 原生 /ai/run/ 转换。模型与协议的对应关系完全由渠道配置决定，适配层不内置
+// 模型清单（Cloudflare 的 OpenAI 兼容端点不支持 image_url，这些模型必须转原生）。
+func cfVisionProtocol(info *relaycommon.RelayInfo) string {
+	return info.ChannelSetting.VisionProtocols[info.UpstreamModelName]
 }
 
 func (a *Adaptor) GetRequestURL(info *relaycommon.RelayInfo) (string, error) {
 	switch info.RelayMode {
 	case constant.RelayModeChatCompletions:
-		if isCfVisionModel(info.UpstreamModelName) {
-			break // moondream：落到下方原生 /ai/run/
+		if cfVisionProtocol(info) != "" {
+			break // 视觉协议模型：落到下方原生 /ai/run/
 		}
 		return fmt.Sprintf("%s/client/v4/accounts/%s/ai/v1/chat/completions", info.ChannelBaseUrl, info.ApiVersion), nil
 	case constant.RelayModeEmbeddings:
@@ -84,12 +80,15 @@ func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayIn
 	case constant.RelayModeCompletions:
 		return convertCf2CompletionsRequest(*request), nil
 	default:
-		// 视觉模型（Image-to-Text）：messages + image_url 转各自的原生 /ai/run/ 输入
-		if info.RelayMode == constant.RelayModeChatCompletions && isCfVisionModel(info.UpstreamModelName) {
-			if isCfLlamaVisionModel(info.UpstreamModelName) {
+		// 视觉协议模型（渠道设置 vision_protocols 声明的）：messages + image_url
+		// 按配置的协议转原生 /ai/run/ 输入
+		if info.RelayMode == constant.RelayModeChatCompletions {
+			switch cfVisionProtocol(info) {
+			case cfVisionProtocolLlama:
 				return convertCfLlamaVisionRequest(request)
+			case cfVisionProtocolMoondream:
+				return convertCfVisionRequest(request)
 			}
-			return convertCfVisionRequest(request)
 		}
 		return request, nil
 	}
@@ -254,10 +253,10 @@ func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycom
 		fallthrough
 	case constant.RelayModeChatCompletions:
 		switch {
-		case isCfVisionModel(info.UpstreamModelName):
-			// 视觉模型：原生 /ai/run/ 响应转 chat completion，先于流式判断
+		case cfVisionProtocol(info) != "":
+			// 视觉协议模型：原生 /ai/run/ 响应转 chat completion，先于流式判断
 			//（这些模型不支持流式，误入 cfStreamHandler 会解析不出内容）
-			if isCfLlamaVisionModel(info.UpstreamModelName) {
+			if cfVisionProtocol(info) == cfVisionProtocolLlama {
 				err, usage = cfLlamaVisionHandler(c, info, resp)
 			} else {
 				err, usage = cfVisionHandler(c, info, resp)

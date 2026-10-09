@@ -32,6 +32,12 @@ type ChannelSettings struct {
 	// HTTP2ConnectionShards spreads HTTP/2 traffic across N independent transports
 	// (1-8). Zero/unset means 1. Ignored when HTTPProtocol is "http1".
 	HTTP2ConnectionShards int `json:"http2_connection_shards,omitempty"`
+	// VisionProtocols maps upstream model names to the channel type's native
+	// vision conversion protocol. Adapters look the mapped model up here and
+	// must not hardcode model lists; keys are upstream model names after
+	// model_mapping. Cloudflare accepts "moondream" ({task,image,question}) and
+	// "llama-vision" ({prompt,image:bytes}).
+	VisionProtocols map[string]string `json:"vision_protocols,omitempty"`
 }
 
 // BindsTaskPlugin reports whether the channel is bound to the task plugin,

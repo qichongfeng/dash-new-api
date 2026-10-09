@@ -100,11 +100,13 @@ func convertCfVisionRequest(request *dto.GeneralOpenAIRequest) (any, error) {
 		return nil, errors.New("vision request requires an image_url")
 	}
 	return map[string]any{
-		"task":      "query",
-		"image":     image,
-		"question":  strings.Join(texts, "\n"),
-		"reasoning": false, // 官方默认 true（先出推理链）：结构化抽取只要 answer，省 token 且避开 answer 为空的怪癖
-		"stream":    false, // 文档参数页两处默认值不一致(true/false)，显式关闭走一次性 JSON 响应
+		"task":     "query",
+		"image":    image,
+		"question": strings.Join(texts, "\n"),
+		// reasoning 不传、走官方默认 true：曾用显式 false 省 token，但 moondream3.1
+		// 上线后 false 路径出现 success:true + answer 空 + in_tokens=0（图未进模型）
+		// 的空响应，回到官方默认路径最稳
+		"stream": false, // 文档参数页两处默认值不一致(true/false)，显式关闭走一次性 JSON 响应
 	}, nil
 }
 

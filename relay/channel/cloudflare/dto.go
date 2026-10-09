@@ -35,5 +35,20 @@ type CfApiError struct {
 }
 
 type CfVisionResult struct {
-	Answer string `json:"answer"`
+	Answer       string             `json:"answer"`
+	Caption      string             `json:"caption"`
+	FinishReason string             `json:"finish_reason"`
+	Reasoning    CfVisionReasoning  `json:"reasoning"`
+	Metrics      CfVisionMetrics    `json:"metrics"`
+}
+
+// CfVisionReasoning query 任务 reasoning=true 时的推理链文本
+type CfVisionReasoning struct {
+	Text string `json:"text"`
+}
+
+// CfVisionMetrics 官方输出 schema 的 metrics：真实 token 消耗（input 小 → 图没被计入）
+type CfVisionMetrics struct {
+	InputTokens  int `json:"input_tokens"`
+	OutputTokens int `json:"output_tokens"`
 }

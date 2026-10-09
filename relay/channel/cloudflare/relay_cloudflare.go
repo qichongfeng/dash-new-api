@@ -171,9 +171,13 @@ func cfVisionHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Res
 	}
 	answer := cfResp.Result.Answer
 	if answer == "" {
-		// success 但 answer 空：落全量响应定位（reasoning 模式/上游怪癖），给客户端明确报错
+		// success 但 answer 空：全量响应落服务端日志；错误消息带上官方 schema 的诊断字段
+		// （finish_reason/metrics/兄弟字段非空情况），客户端 Console 直接可定位
 		logger.LogError(c, "cf_vision_empty_answer: "+string(responseBody))
-		return types.NewError(errors.New("moondream returned empty answer"), types.ErrorCodeBadResponseStatusCode), nil
+		r := cfResp.Result
+		msg := fmt.Sprintf("moondream empty answer: finish=%q in_tokens=%d out_tokens=%d caption_len=%d reasoning_len=%d",
+			r.FinishReason, r.Metrics.InputTokens, r.Metrics.OutputTokens, len(r.Caption), len(r.Reasoning.Text))
+		return types.NewError(errors.New(msg), types.ErrorCodeBadResponseStatusCode), nil
 	}
 	usage := service.ResponseText2Usage(c, answer, info.UpstreamModelName, info.GetEstimatePromptTokens())
 	response := dto.TextResponse{

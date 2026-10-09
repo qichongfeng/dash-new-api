@@ -6821,6 +6821,8 @@
     "Message Push Token": "消息推送 Token",
     "The Token configured with the push URL in the MP console; verifies every push": "与推送 URL 一起在 MP 后台配置的 Token，用于校验每条推送",
     "Environment": "环境",
-    "0 = production (personal subject), 1 = sandbox": "0 = 现网（个人主体），1 = 沙箱"
+    "0 = production (personal subject), 1 = sandbox": "0 = 现网（个人主体），1 = 沙箱",
+    "Vision Protocols": "视觉协议映射",
+    "Upstream vision model to native protocol mapping (moondream | llama-vision); models listed here bypass the OpenAI-compatible endpoint": "上游视觉模型 → 原生协议映射（moondream | llama-vision）；列出的模型不走 OpenAI 兼容端点，转原生 /ai/run/ 格式"
   }
 }

@@ -6821,6 +6821,8 @@
     "Message Push Token": "Message Push Token",
     "The Token configured with the push URL in the MP console; verifies every push": "The Token configured with the push URL in the MP console; verifies every push",
     "Environment": "Environment",
-    "0 = production (personal subject), 1 = sandbox": "0 = production (personal subject), 1 = sandbox"
+    "0 = production (personal subject), 1 = sandbox": "0 = production (personal subject), 1 = sandbox",
+    "Vision Protocols": "Vision Protocols",
+    "Upstream vision model to native protocol mapping (moondream | llama-vision); models listed here bypass the OpenAI-compatible endpoint": "Upstream vision model to native protocol mapping (moondream | llama-vision); models listed here bypass the OpenAI-compatible endpoint"
   }
 }

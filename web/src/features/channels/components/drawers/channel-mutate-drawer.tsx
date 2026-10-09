@@ -3809,25 +3809,52 @@ export function ChannelMutateDrawer({
 
             {/* Cloudflare Workers AI (type 39) */}
             {currentType === 39 && (
-              <FormField
-                control={form.control}
-                name='other'
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel required>{t('Account ID')}</FormLabel>
-                    <FormControl>
-                      <Input
-                        placeholder={t('e.g., d6b5da8hk1awo8nap34ube6gh')}
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormDescription>
-                      {t('Your Cloudflare Account ID')}
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              <>
+                <FormField
+                  control={form.control}
+                  name='other'
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel required>{t('Account ID')}</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder={t('e.g., d6b5da8hk1awo8nap34ube6gh')}
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormDescription>
+                        {t('Your Cloudflare Account ID')}
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name='vision_protocols'
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('Vision Protocols')}</FormLabel>
+                      <FormControl>
+                        <Textarea
+                          rows={3}
+                          placeholder={t(
+                            '{"@cf/meta/llama-3.2-11b-vision-instruct": "llama-vision"}'
+                          )}
+                          className='font-mono text-xs'
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormDescription>
+                        {t(
+                          'Upstream vision model to native protocol mapping (moondream | llama-vision); models listed here bypass the OpenAI-compatible endpoint'
+                        )}
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </>
             )}
 
             {/* SiliconFlow (type 40) */}

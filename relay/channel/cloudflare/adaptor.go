@@ -16,6 +16,7 @@ import (
 	"github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
+	"github.com/QuantumNous/new-api/service"
 
 	"github.com/gin-gonic/gin"
 )
@@ -36,10 +37,22 @@ func (a *Adaptor) ConvertClaudeRequest(*gin.Context, *relaycommon.RelayInfo, *dt
 func (a *Adaptor) Init(info *relaycommon.RelayInfo) {
 }
 
-// isCfVisionModel CF 上的 Image-to-Text 模型（moondream 系）：OpenAI 兼容 chat 端点
-// 不支持它们（上游直接 400），需转原生 /ai/run/{task,image,question}。
+// isCfVisionModel CF 上需要走原生 /ai/run/ 的视觉模型：OpenAI 兼容 chat 端点
+// 不支持 image_url 混合 content（上游直接 400 或静默丢图）。按模型家族前缀识别，
+// 不绑定具体模型 ID。
 func isCfVisionModel(upstreamModelName string) bool {
+	return isCfMoondreamModel(upstreamModelName) || isCfLlamaVisionModel(upstreamModelName)
+}
+
+func isCfMoondreamModel(upstreamModelName string) bool {
 	return strings.HasPrefix(upstreamModelName, "@cf/moondream/")
+}
+
+// isCfLlamaVisionModel llama-3.2 vision 系（11b/90b…）：原生 /ai/run 收
+// {prompt, image:[字节数组]}（实测 data URI/URL 字符串均不识别）
+func isCfLlamaVisionModel(upstreamModelName string) bool {
+	return strings.HasPrefix(upstreamModelName, "@cf/meta/llama-3.2-") &&
+		strings.Contains(upstreamModelName, "vision")
 }
 
 func (a *Adaptor) GetRequestURL(info *relaycommon.RelayInfo) (string, error) {
@@ -71,8 +84,11 @@ func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayIn
 	case constant.RelayModeCompletions:
 		return convertCf2CompletionsRequest(*request), nil
 	default:
-		// moondream 系（Image-to-Text）：messages + image_url 转原生 {task,image,question}
+		// 视觉模型（Image-to-Text）：messages + image_url 转各自的原生 /ai/run/ 输入
 		if info.RelayMode == constant.RelayModeChatCompletions && isCfVisionModel(info.UpstreamModelName) {
+			if isCfLlamaVisionModel(info.UpstreamModelName) {
+				return convertCfLlamaVisionRequest(request)
+			}
 			return convertCfVisionRequest(request)
 		}
 		return request, nil
@@ -107,6 +123,68 @@ func convertCfVisionRequest(request *dto.GeneralOpenAIRequest) (any, error) {
 		// 上线后 false 路径出现 success:true + answer 空 + in_tokens=0（图未进模型）
 		// 的空响应，回到官方默认路径最稳
 		"stream": false, // 文档参数页两处默认值不一致(true/false)，显式关闭走一次性 JSON 响应
+	}, nil
+}
+
+// maxCfLlamaVisionImageBytes 图转 JSON 字节数组后体积膨胀 ~4 倍，压一道上限
+const maxCfLlamaVisionImageBytes = 5 << 20
+
+// convertCfLlamaVisionRequest llama-3.2-vision 原生输入：{prompt, image:[字节]}。
+// image_url 支持两种来源：data URI（小程序拍照）直接解码；公网 URL 由服务端代下。
+func convertCfLlamaVisionRequest(request *dto.GeneralOpenAIRequest) (any, error) {
+	var image string
+	texts := make([]string, 0, 2)
+	for i := range request.Messages {
+		for _, item := range request.Messages[i].ParseContent() {
+			if item.Type == "image_url" {
+				if img := item.GetImageMedia(); img != nil && image == "" {
+					image = img.Url
+				}
+			} else if item.Type == "text" && item.Text != "" {
+				texts = append(texts, item.Text)
+			}
+		}
+	}
+	if image == "" {
+		return nil, errors.New("vision request requires an image_url")
+	}
+	var raw []byte
+	if dataURI, ok := strings.CutPrefix(image, "data:"); ok {
+		_, payload, found := strings.Cut(dataURI, ",")
+		if !found {
+			return nil, errors.New("vision request image data URI is malformed")
+		}
+		decoded, err := base64.StdEncoding.DecodeString(payload)
+		if err != nil {
+			return nil, errors.New("vision request image data URI is not valid base64")
+		}
+		raw = decoded
+	} else if strings.HasPrefix(image, "http://") || strings.HasPrefix(image, "https://") {
+		_, b64, err := service.GetImageFromUrl(image)
+		if err != nil {
+			return nil, fmt.Errorf("vision request image download failed: %w", err)
+		}
+		raw, err = base64.StdEncoding.DecodeString(b64)
+		if err != nil {
+			return nil, errors.New("vision request image download yielded invalid base64")
+		}
+	} else {
+		return nil, errors.New("vision request image must be a data URI or an http(s) URL")
+	}
+	if len(raw) == 0 {
+		return nil, errors.New("vision request image is empty")
+	}
+	if len(raw) > maxCfLlamaVisionImageBytes {
+		return nil, fmt.Errorf("vision request image exceeds %d bytes", maxCfLlamaVisionImageBytes)
+	}
+	// []byte 会被 JSON 编成 base64 字符串，必须转数字切片才是官方要的字节数组
+	ints := make([]int, len(raw))
+	for i, b := range raw {
+		ints[i] = int(b)
+	}
+	return map[string]any{
+		"prompt": strings.Join(texts, "\n"),
+		"image":  ints,
 	}, nil
 }
 
@@ -176,11 +254,16 @@ func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycom
 		fallthrough
 	case constant.RelayModeChatCompletions:
 		switch {
+		case isCfVisionModel(info.UpstreamModelName):
+			// 视觉模型：原生 /ai/run/ 响应转 chat completion，先于流式判断
+			//（这些模型不支持流式，误入 cfStreamHandler 会解析不出内容）
+			if isCfLlamaVisionModel(info.UpstreamModelName) {
+				err, usage = cfLlamaVisionHandler(c, info, resp)
+			} else {
+				err, usage = cfVisionHandler(c, info, resp)
+			}
 		case info.IsStream:
 			err, usage = cfStreamHandler(c, info, resp)
-		case isCfVisionModel(info.UpstreamModelName):
-			// moondream：原生 /ai/run/ 响应转 chat completion（客户端视觉调用为非流式）
-			err, usage = cfVisionHandler(c, info, resp)
 		default:
 			err, usage = cfHandler(c, info, resp)
 		}

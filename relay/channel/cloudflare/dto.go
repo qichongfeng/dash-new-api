@@ -52,3 +52,23 @@ type CfVisionMetrics struct {
 	InputTokens  int `json:"input_tokens"`
 	OutputTokens int `json:"output_tokens"`
 }
+
+// CfLlamaVisionResponse llama-3.2-vision 原生 /ai/run/ 响应：正文在 result.response，
+// usage 为上游真实计量（prompt_tokens 含图）。错误信封与 moondream 相同。
+type CfLlamaVisionResponse struct {
+	Result  CfLlamaVisionResult `json:"result"`
+	Success bool                `json:"success"`
+	Errors  []CfApiError        `json:"errors"`
+}
+
+type CfLlamaVisionResult struct {
+	// Response 多态：普通问答是字符串；提示词要求 JSON 输出时 CF 会把模型输出
+	// 解析成对象直接放这里（实测 {"amount":0,...}），handler 统一转回文本
+	Response any                `json:"response"`
+	Usage    CfLlamaVisionUsage `json:"usage"`
+}
+
+type CfLlamaVisionUsage struct {
+	PromptTokens     int `json:"prompt_tokens"`
+	CompletionTokens int `json:"completion_tokens"`
+}

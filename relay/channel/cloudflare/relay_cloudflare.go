@@ -201,7 +201,12 @@ func cfVisionHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Res
 
 // cfErrMessage 优先取 CF errors[0].message，取不到回落到截断的原始响应体
 func cfErrMessage(cfResp CfVisionResponse, body []byte) string {
-	for _, e := range cfResp.Errors {
+	return cfErrorsMessage(cfResp.Errors, body)
+}
+
+// cfErrorsMessage 两个视觉响应信封共用的错误提取
+func cfErrorsMessage(errs []CfApiError, body []byte) string {
+	for _, e := range errs {
 		if e.Message != "" {
 			return e.Message
 		}
@@ -211,4 +216,62 @@ func cfErrMessage(cfResp CfVisionResponse, body []byte) string {
 		s = s[:300]
 	}
 	return s
+}
+
+// cfLlamaVisionHandler llama-3.2-vision /ai/run/ 响应 {result:{response,usage}} →
+// 包装成 OpenAI chat completion；usage 直接用上游计量（prompt_tokens 含图）
+func cfLlamaVisionHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response) (*types.NewAPIError, *dto.Usage) {
+	var cfResp CfLlamaVisionResponse
+	responseBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return types.NewError(err, types.ErrorCodeBadResponseBody), nil
+	}
+	service.CloseResponseBodyGracefully(resp)
+	if err := json.Unmarshal(responseBody, &cfResp); err != nil {
+		return types.NewError(err, types.ErrorCodeBadResponseBody), nil
+	}
+	if resp.StatusCode != http.StatusOK || !cfResp.Success {
+		msg := cfErrorsMessage(cfResp.Errors, responseBody)
+		logger.LogError(c, fmt.Sprintf("cf_vision_upstream_error: HTTP %d %s", resp.StatusCode, msg))
+		return types.NewError(fmt.Errorf("cloudflare vision upstream error: %s", msg), types.ErrorCodeBadResponseStatusCode), nil
+	}
+	answer := ""
+	switch v := cfResp.Result.Response.(type) {
+	case string:
+		answer = v
+	case nil:
+	default:
+		// CF 把 JSON 输出对象化了：转回文本，客户端按普通 content 解析
+		if b, err := common.Marshal(v); err == nil {
+			answer = string(b)
+		}
+	}
+	if answer == "" {
+		logger.LogError(c, "cf_vision_empty_answer: "+string(responseBody))
+		msg := fmt.Sprintf("llama vision empty answer: in_tokens=%d out_tokens=%d",
+			cfResp.Result.Usage.PromptTokens, cfResp.Result.Usage.CompletionTokens)
+		return types.NewError(errors.New(msg), types.ErrorCodeBadResponseStatusCode), nil
+	}
+	usage := &dto.Usage{
+		PromptTokens:     cfResp.Result.Usage.PromptTokens,
+		CompletionTokens: cfResp.Result.Usage.CompletionTokens,
+		TotalTokens:      cfResp.Result.Usage.PromptTokens + cfResp.Result.Usage.CompletionTokens,
+	}
+	response := dto.TextResponse{
+		Id:      helper.GetResponseID(c),
+		Object:  "chat.completion",
+		Created: common.GetTimestamp(),
+		Model:   info.UpstreamModelName,
+		Choices: []dto.OpenAITextResponseChoice{{Message: dto.Message{Role: "assistant"}}},
+		Usage:   *usage,
+	}
+	response.Choices[0].SetStringContent(answer)
+	jsonResponse, err := json.Marshal(response)
+	if err != nil {
+		return types.NewError(err, types.ErrorCodeBadResponseBody), nil
+	}
+	c.Writer.Header().Set("Content-Type", "application/json")
+	c.Writer.WriteHeader(resp.StatusCode)
+	_, _ = c.Writer.Write(jsonResponse)
+	return nil, usage
 }

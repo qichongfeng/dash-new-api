@@ -3,6 +3,8 @@ package cloudflare
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -160,8 +162,19 @@ func cfVisionHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Res
 	if err := json.Unmarshal(responseBody, &cfResp); err != nil {
 		return types.NewError(err, types.ErrorCodeBadResponseBody), nil
 	}
-
+	// CF 出错信封 {"success":false,"errors":[...]}（HTTP 也可能非 200）：
+	// 透传真实原因并落日志，别再吞成 200 空 content 让客户端一头雾水
+	if resp.StatusCode != http.StatusOK || !cfResp.Success {
+		msg := cfErrMessage(cfResp, responseBody)
+		logger.LogError(c, fmt.Sprintf("cf_vision_upstream_error: HTTP %d %s", resp.StatusCode, msg))
+		return types.NewError(fmt.Errorf("cloudflare vision upstream error: %s", msg), types.ErrorCodeBadResponseStatusCode), nil
+	}
 	answer := cfResp.Result.Answer
+	if answer == "" {
+		// success 但 answer 空：落全量响应定位（reasoning 模式/上游怪癖），给客户端明确报错
+		logger.LogError(c, "cf_vision_empty_answer: "+string(responseBody))
+		return types.NewError(errors.New("moondream returned empty answer"), types.ErrorCodeBadResponseStatusCode), nil
+	}
 	usage := service.ResponseText2Usage(c, answer, info.UpstreamModelName, info.GetEstimatePromptTokens())
 	response := dto.TextResponse{
 		Id:      helper.GetResponseID(c),
@@ -180,4 +193,18 @@ func cfVisionHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Res
 	c.Writer.WriteHeader(resp.StatusCode)
 	_, _ = c.Writer.Write(jsonResponse)
 	return nil, usage
+}
+
+// cfErrMessage 优先取 CF errors[0].message，取不到回落到截断的原始响应体
+func cfErrMessage(cfResp CfVisionResponse, body []byte) string {
+	for _, e := range cfResp.Errors {
+		if e.Message != "" {
+			return e.Message
+		}
+	}
+	s := string(body)
+	if len(s) > 300 {
+		s = s[:300]
+	}
+	return s
 }

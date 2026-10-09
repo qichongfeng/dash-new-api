@@ -100,9 +100,11 @@ func convertCfVisionRequest(request *dto.GeneralOpenAIRequest) (any, error) {
 		return nil, errors.New("vision request requires an image_url")
 	}
 	return map[string]any{
-		"task":     "query",
-		"image":    image,
-		"question": strings.Join(texts, "\n"),
+		"task":      "query",
+		"image":     image,
+		"question":  strings.Join(texts, "\n"),
+		"reasoning": false, // 官方默认 true（先出推理链）：结构化抽取只要 answer，省 token 且避开 answer 为空的怪癖
+		"stream":    false, // 文档参数页两处默认值不一致(true/false)，显式关闭走一次性 JSON 响应
 	}, nil
 }
 

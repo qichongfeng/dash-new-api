@@ -35,11 +35,11 @@ type CfApiError struct {
 }
 
 type CfVisionResult struct {
-	Answer       string             `json:"answer"`
-	Caption      string             `json:"caption"`
-	FinishReason string             `json:"finish_reason"`
-	Reasoning    CfVisionReasoning  `json:"reasoning"`
-	Metrics      CfVisionMetrics    `json:"metrics"`
+	Answer       string            `json:"answer"`
+	Caption      string            `json:"caption"`
+	FinishReason string            `json:"finish_reason"`
+	Reasoning    CfVisionReasoning `json:"reasoning"`
+	Metrics      CfVisionMetrics   `json:"metrics"`
 }
 
 // CfVisionReasoning query 任务 reasoning=true 时的推理链文本

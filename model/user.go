@@ -532,6 +532,18 @@ func GetUserById(id int, selectAll bool) (*User, error) {
 	return &user, err
 }
 
+// GetUserByUsername finds a user by exact username match. Unscoped on purpose:
+// app backends key their dash accounts by username, and a soft-deleted row
+// still owns the unique name, so the lookup must not report it as free.
+func GetUserByUsername(username string) (*User, error) {
+	if username == "" {
+		return nil, errors.New("username 为空！")
+	}
+	user := User{}
+	err := DB.Unscoped().Omit("password", "access_token").First(&user, "username = ?", username).Error
+	return &user, err
+}
+
 // GetSelfUserById reads dashboard profile data and password existence in one
 // query. The password hash and management access token are never selected.
 func GetSelfUserById(id int) (*User, error) {

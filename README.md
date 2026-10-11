@@ -48,6 +48,7 @@
 | 端点 | 说明 |
 | --- | --- |
 | `POST /api/user/` | 创建用户，响应返回 `data.id`（应用侧 openid ↔ 用户映射用） |
+| `GET /api/user/username/:username` | 按 username **精确**查用户（未命中返回 404 信封；供外部应用后端做账号映射自愈） |
 | `POST /api/user/token` | 生成 root PAT（个人访问令牌，需 2FA）——外部系统的管理凭证 |
 | `POST /api/token/admin/` | 为指定 `user_id` 签发 `sk-` 中转令牌（响应打码） |
 | `POST /api/token/admin/:id/key?user_id=` | 取完整 `sk-` key |

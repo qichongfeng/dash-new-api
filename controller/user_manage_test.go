@@ -242,6 +242,50 @@ func TestCreateUserRejectsElevatedRole(t *testing.T) {
 	}
 }
 
+func performGetUserByUsernameRequest(t *testing.T, username string) *httptest.ResponseRecorder {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/user/username/"+username, nil)
+	c.Params = gin.Params{{Key: "username", Value: username}}
+	c.Set("id", 9999)
+	c.Set("role", common.RoleRootUser)
+	GetUserByUsername(c)
+	return recorder
+}
+
+func TestGetUserByUsernameExactLookup(t *testing.T) {
+	db := setupManageUserTestDB(t)
+	user := model.User{
+		Username: "qm_exact_lookup", Password: "password", Role: common.RoleCommonUser,
+		Status: common.UserStatusEnabled, Group: "default", AffCode: "exact-lookup-aff",
+	}
+	require.NoError(t, db.Create(&user).Error)
+
+	recorder := performGetUserByUsernameRequest(t, "qm_exact_lookup")
+	assert.Equal(t, http.StatusOK, recorder.Code)
+	assert.Contains(t, recorder.Body.String(), fmt.Sprintf(`"id":%d`, user.Id))
+	assert.NotContains(t, recorder.Body.String(), `"password":"password"`)
+
+	// Substrings of an existing username must miss: this is the exact-match
+	// contract that fuzzy /api/user/search cannot provide.
+	recorder = performGetUserByUsernameRequest(t, "qm_exact_looku")
+	assert.Equal(t, http.StatusNotFound, recorder.Code)
+	assert.Contains(t, recorder.Body.String(), `"success":false`)
+
+	// A soft-deleted row still owns the unique username, so it stays a hit.
+	deleted := model.User{
+		Username: "qm_soft_deleted", Password: "password", Role: common.RoleCommonUser,
+		Status: common.UserStatusEnabled, Group: "default", AffCode: "soft-deleted-aff",
+	}
+	require.NoError(t, db.Create(&deleted).Error)
+	require.NoError(t, db.Delete(&deleted).Error)
+	recorder = performGetUserByUsernameRequest(t, "qm_soft_deleted")
+	assert.Equal(t, http.StatusOK, recorder.Code)
+	assert.Contains(t, recorder.Body.String(), `"username":"qm_soft_deleted"`)
+}
+
 func TestManageUserPromoteActionIsRejected(t *testing.T) {
 	db := setupManageUserTestDB(t)
 	user := model.User{

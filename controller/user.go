@@ -418,6 +418,35 @@ func GetUser(c *gin.Context) {
 	return
 }
 
+// GetUserByUsername is the exact-match lookup for app backends that key their
+// dash accounts by username (their stable external id). A miss returns a 404
+// envelope so callers can tell it apart from transient server errors.
+func GetUserByUsername(c *gin.Context) {
+	username := strings.TrimSpace(c.Param("username"))
+	if username == "" || len(username) > 64 {
+		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+		return
+	}
+	user, err := model.GetUserByUsername(username)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "username not found"})
+			return
+		}
+		common.ApiError(c, err)
+		return
+	}
+	if !canManageTargetRole(c.GetInt("role"), user.Role) {
+		common.ApiErrorI18n(c, i18n.MsgUserNoPermissionSameLevel)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "",
+		"data":    user,
+	})
+}
+
 type TransferAffQuotaRequest struct {
 	Quota int `json:"quota" binding:"required"`
 }

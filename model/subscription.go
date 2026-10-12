@@ -1,6 +1,7 @@
 package model
 
 import (
+	"database/sql"
 	"errors"
 	"fmt"
 	"strconv"
@@ -508,16 +509,28 @@ func CreateUserSubscriptionFromPlanTx(tx *gorm.DB, userId int, plan *Subscriptio
 		}
 	}
 	nowUnix := GetDBTimestampTx(tx)
-	now := time.Unix(nowUnix, 0)
-	endUnix, err := calcPlanEndTime(now, plan)
+	// Renewal anchoring: when an active, unexpired row of the same plan exists,
+	// the new row starts at that row's latest EndTime, so purchased durations
+	// stack serially instead of running in parallel. Cancelled/expired rows
+	// never anchor, and refunding an earlier order leaves a gap (later rows are
+	// not pulled forward) — accepted behavior. Every caller locks the user row
+	// before entering, so the anchor read is serialized per user.
+	var anchorEnd sql.NullInt64
+	if err := tx.Model(&UserSubscription{}).
+		Where("user_id = ? AND plan_id = ? AND status = ? AND end_time > ?", userId, plan.Id, "active", nowUnix).
+		Select("MAX(end_time)").Scan(&anchorEnd).Error; err != nil {
+		return nil, err
+	}
+	startUnix := max(nowUnix, anchorEnd.Int64)
+	effectiveStart := time.Unix(startUnix, 0)
+	endUnix, err := calcPlanEndTime(effectiveStart, plan)
 	if err != nil {
 		return nil, err
 	}
-	resetBase := now
-	nextReset := calcNextResetTime(resetBase, plan, endUnix)
+	nextReset := calcNextResetTime(effectiveStart, plan, endUnix)
 	lastReset := int64(0)
 	if nextReset > 0 {
-		lastReset = now.Unix()
+		lastReset = startUnix
 	}
 	upgradeGroup := strings.TrimSpace(plan.UpgradeGroup)
 	prevGroup := ""
@@ -543,7 +556,7 @@ func CreateUserSubscriptionFromPlanTx(tx *gorm.DB, userId int, plan *Subscriptio
 		PlanId:              plan.Id,
 		AmountTotal:         plan.TotalAmount,
 		AmountUsed:          0,
-		StartTime:           now.Unix(),
+		StartTime:           startUnix,
 		EndTime:             endUnix,
 		Status:              "active",
 		Source:              source,

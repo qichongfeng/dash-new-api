@@ -3,9 +3,12 @@ package controller
 import (
 	"testing"
 
+	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
+	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 )
 
 func confirmPaymentComplianceForTest(t *testing.T) {
@@ -142,37 +145,43 @@ func TestWaffoPancakeWebhookEnabledRequiresTopUpAndWebhookConfig(t *testing.T) {
 	require.False(t, isWaffoPancakeWebhookEnabled())
 }
 
-func TestWechatVpayEnabledRequiresCredentialsAndPushToken(t *testing.T) {
+func TestWechatVpayEnabledRequiresUsableApp(t *testing.T) {
 	confirmPaymentComplianceForTest(t)
-	originalAppId := setting.WechatVpayAppId
-	originalOfferId := setting.WechatVpayOfferId
-	originalAppKey := setting.WechatVpayAppKey
-	originalPushToken := setting.WechatVpayPushToken
-	t.Cleanup(func() {
-		setting.WechatVpayAppId = originalAppId
-		setting.WechatVpayOfferId = originalOfferId
-		setting.WechatVpayAppKey = originalAppKey
-		setting.WechatVpayPushToken = originalPushToken
-	})
+	originalDB := model.DB
+	database, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, database.AutoMigrate(&model.WechatVpayApp{}))
+	model.DB = database
+	t.Cleanup(func() { model.DB = originalDB })
 
-	// Order creation needs AppID + OfferID + AppKey.
-	setting.WechatVpayAppId = "wx-app"
-	setting.WechatVpayOfferId = "offer"
-	setting.WechatVpayAppKey = "app-key"
-	setting.WechatVpayPushToken = "push-token"
+	insertApp := func(t *testing.T, appId, offerId, appKey, pushToken string, enabled bool) *model.WechatVpayApp {
+		t.Helper()
+		app := &model.WechatVpayApp{
+			AppId:     appId,
+			Name:      appId,
+			OfferId:   offerId,
+			AppKey:    appKey,
+			PushToken: pushToken,
+			Env:       0,
+			Enabled:   enabled,
+		}
+		require.NoError(t, model.CreateWechatVpayApp(app))
+		return app
+	}
+
+	// 任一启用小程序三要素齐备即可下单签名
+	insertApp(t, "wx-app", "offer", "app-key", "push-token", true)
 	require.True(t, isWechatVpayTopUpEnabled())
-	require.True(t, isWechatVpayWebhookEnabled())
 
-	// Without the push token the order endpoint still works, the push endpoint does not.
-	setting.WechatVpayPushToken = ""
+	// PushToken 缺失的小程序不可收推送，但下单可用性不受影响
+	noPush := insertApp(t, "wx-no-push", "offer", "app-key", "", true)
 	require.True(t, isWechatVpayTopUpEnabled())
-	require.False(t, isWechatVpayWebhookEnabled())
+	require.True(t, noPush.SigningConfigured())
+	require.False(t, noPush.PushConfigured())
 
-	// Any missing credential disables everything.
-	setting.WechatVpayPushToken = "push-token"
-	setting.WechatVpayAppKey = ""
+	// 停用所有小程序后不可用
+	require.NoError(t, model.DB.Model(&model.WechatVpayApp{}).Where("1 = 1").Update("enabled", false).Error)
 	require.False(t, isWechatVpayTopUpEnabled())
-	require.False(t, isWechatVpayWebhookEnabled())
 }
 
 func TestEpayWebhookEnabledRequiresTopUpAndWebhookConfig(t *testing.T) {

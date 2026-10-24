@@ -50,7 +50,8 @@ export function getPlanFormSchema(t: TFunction) {
     stripe_price_id: z.string().optional(),
     creem_product_id: z.string().optional(),
     waffo_pancake_product_id: z.string().optional(),
-    wechat_vpay_product_id: z.string().optional(),
+    // 表单内为 appid → 道具 ID 映射，提交时序列化为 wechat_vpay_product_ids JSON
+    wechat_vpay_products: z.record(z.string(), z.string()),
   })
 }
 
@@ -76,7 +77,7 @@ export const PLAN_FORM_DEFAULTS: PlanFormValues = {
   stripe_price_id: '',
   creem_product_id: '',
   waffo_pancake_product_id: '',
-  wechat_vpay_product_id: '',
+  wechat_vpay_products: {},
 }
 
 export function planToFormValues(plan: SubscriptionPlan): PlanFormValues {
@@ -100,14 +101,33 @@ export function planToFormValues(plan: SubscriptionPlan): PlanFormValues {
     stripe_price_id: plan.stripe_price_id || '',
     creem_product_id: plan.creem_product_id || '',
     waffo_pancake_product_id: plan.waffo_pancake_product_id || '',
-    wechat_vpay_product_id: plan.wechat_vpay_product_id || '',
+    wechat_vpay_products: parseWechatVpayProducts(plan.wechat_vpay_product_ids),
+  }
+}
+
+// 解析套餐上的 appid → 道具 ID 映射（脏数据按空映射处理）
+function parseWechatVpayProducts(raw?: string): Record<string, string> {
+  if (!raw) return {}
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>
+    const result: Record<string, string> = {}
+    for (const [key, value] of Object.entries(parsed)) {
+      if (typeof value === 'string') {
+        result[key] = value
+      }
+    }
+    return result
+  } catch {
+    return {}
   }
 }
 
 export function formValuesToPlanPayload(values: PlanFormValues): PlanPayload {
+  const { wechat_vpay_products, ...planFields } = values
   return {
     plan: {
-      ...values,
+      ...planFields,
+      wechat_vpay_product_ids: JSON.stringify(wechat_vpay_products ?? {}),
       price_amount: Number(values.price_amount || 0),
       duration_value: Number(values.duration_value || 0),
       custom_seconds: Number(values.custom_seconds || 0),

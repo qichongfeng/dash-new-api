@@ -169,7 +169,9 @@ type SubscriptionPlan struct {
 	StripePriceId         string `json:"stripe_price_id" gorm:"type:varchar(128);default:''"`
 	CreemProductId        string `json:"creem_product_id" gorm:"type:varchar(128);default:''"`
 	WaffoPancakeProductId string `json:"waffo_pancake_product_id" gorm:"type:varchar(128);default:''"`
-	WechatVpayProductId   string `json:"wechat_vpay_product_id" gorm:"type:varchar(128);default:''"`
+	// 微信虚拟支付道具映射 JSON：appid → 该小程序 MP 后台登记的道具 ID。各小程序
+	// 道具独立登记、ID 不同；登记价格须与套餐价格×汇率精确到分一致。
+	WechatVpayProductIds string `json:"wechat_vpay_product_ids" gorm:"type:text"`
 
 	// Max purchases per user (0 = unlimited)
 	MaxPurchasePerUser int `json:"max_purchase_per_user" gorm:"type:int;default:0"`
@@ -203,6 +205,18 @@ func (p *SubscriptionPlan) BeforeUpdate(tx *gorm.DB) error {
 	return nil
 }
 
+// WechatVpayProductIdForApp 解析道具映射，返回该小程序登记的道具 ID（空 = 未配置）。
+func (p *SubscriptionPlan) WechatVpayProductIdForApp(appId string) string {
+	if p == nil || strings.TrimSpace(appId) == "" || strings.TrimSpace(p.WechatVpayProductIds) == "" {
+		return ""
+	}
+	var products map[string]string
+	if err := common.Unmarshal([]byte(p.WechatVpayProductIds), &products); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(products[strings.TrimSpace(appId)])
+}
+
 func (p *SubscriptionPlan) NormalizeDefaults() {
 	if p.AllowBalancePay == nil {
 		p.AllowBalancePay = common.GetPointer(true)
@@ -222,9 +236,11 @@ type SubscriptionOrder struct {
 	TradeNo         string `json:"trade_no" gorm:"unique;type:varchar(255);index"`
 	PaymentMethod   string `json:"payment_method" gorm:"type:varchar(50)"`
 	PaymentProvider string `json:"payment_provider" gorm:"type:varchar(50);default:''"`
-	Status          string `json:"status"`
-	CreateTime      int64  `json:"create_time"`
-	CompleteTime    int64  `json:"complete_time"`
+	// 下单归属的小程序 AppID（微信虚拟支付订单专用；openid/查单凭证按它解析）
+	ProviderAppId string `json:"provider_app_id" gorm:"type:varchar(32);default:''"`
+	Status        string `json:"status"`
+	CreateTime    int64  `json:"create_time"`
+	CompleteTime  int64  `json:"complete_time"`
 
 	ProviderPayload string `json:"provider_payload" gorm:"type:text"`
 }

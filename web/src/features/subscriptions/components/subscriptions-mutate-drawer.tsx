@@ -71,6 +71,7 @@ import {
   getGroups,
   createWaffoPancakeSubscriptionProduct,
   listWaffoPancakeSubscriptionProductOptions,
+  listWechatVpayApps,
 } from '../api'
 import { getDurationUnitOptions, getResetPeriodOptions } from '../constants'
 import {
@@ -80,7 +81,7 @@ import {
   formValuesToPlanPayload,
   type PlanFormValues,
 } from '../lib'
-import type { PlanRecord } from '../types'
+import type { PlanRecord, WechatVpayAppOption } from '../types'
 import { useSubscriptions } from './subscriptions-provider'
 
 interface Props {
@@ -106,6 +107,9 @@ export function SubscriptionsMutateDrawer({
   const [pancakeProducts, setPancakeProducts] = useState<
     { id: string; name: string; status: string }[]
   >([])
+  const [wechatVpayApps, setWechatVpayApps] = useState<WechatVpayAppOption[]>(
+    []
+  )
 
   const schema = getPlanFormSchema(t)
   const form = useForm<PlanFormValues>({
@@ -146,6 +150,12 @@ export function SubscriptionsMutateDrawer({
           }
         })
         .catch(() => setPancakeProducts([]))
+      // Best-effort：列表失败时仅退化为空（提示先到支付设置添加小程序）
+      listWechatVpayApps()
+        .then((res) => {
+          setWechatVpayApps(res.success ? res.data || [] : [])
+        })
+        .catch(() => setWechatVpayApps([]))
     }
   }, [open, currentRow, form])
 
@@ -831,19 +841,61 @@ export function SubscriptionsMutateDrawer({
 
               <FormField
                 control={form.control}
-                name='wechat_vpay_product_id'
+                name='wechat_vpay_products'
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>WeChat VPay Item ID</FormLabel>
-                    <FormControl>
-                      <Input {...field} placeholder='...' />
-                    </FormControl>
-                    <FormDescription>
-                      {t(
-                        'Item (道具) ID created in the WeChat MP console under 虚拟支付 → 道具管理. The item price must equal the converted price shown below.'
-                      )}
-                    </FormDescription>
+                    <FormLabel>
+                      {t('WeChat VPay Item ID (per mini-program)')}
+                    </FormLabel>
+                    {wechatVpayApps.length === 0 ? (
+                      <FormDescription>
+                        {t(
+                          'No WeChat mini-programs configured. Add them in Payment settings → WeChat VPay first.'
+                        )}
+                      </FormDescription>
+                    ) : (
+                      <div className='space-y-3'>
+                        {wechatVpayApps.map((app) => (
+                          <div
+                            key={app.app_id}
+                            className='grid grid-cols-[minmax(0,140px)_minmax(0,1fr)] items-center gap-2'
+                          >
+                            <span
+                              className='truncate text-sm text-muted-foreground'
+                              title={app.app_id}
+                            >
+                              {app.name || app.app_id}
+                              {!app.enabled && (
+                                <span className='ml-1'>
+                                  ({t('Disabled')})
+                                </span>
+                              )}
+                            </span>
+                            <Input
+                              value={field.value?.[app.app_id] ?? ''}
+                              placeholder='...'
+                              aria-label={t(
+                                'WeChat VPay Item ID for {{app}}',
+                                { app: app.name || app.app_id }
+                              )}
+                              onChange={(event) =>
+                                field.onChange({
+                                  ...field.value,
+                                  [app.app_id]: event.target.value,
+                                })
+                              }
+                            />
+                          </div>
+                        ))}
+                        <FormDescription>
+                          {t(
+                            'Item (道具) ID created in each mini-program’s MP console under 虚拟支付 → 道具管理. The item price must equal the converted price shown below.'
+                          )}
+                        </FormDescription>
+                      </div>
+                    )}
                     {watchedPrice > 0 &&
+                      wechatVpayApps.length > 0 &&
                       (wechatFenExact ? (
                         <FormDescription>
                           {t(

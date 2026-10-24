@@ -63,6 +63,7 @@ import { AmountDiscountVisualEditor } from './amount-discount-visual-editor'
 import { AmountOptionsVisualEditor } from './amount-options-visual-editor'
 import { CreemProductsVisualEditor } from './creem-products-visual-editor'
 import { PaymentMethodsVisualEditor } from './payment-methods-visual-editor'
+import { WechatVpayAppsSection } from './wechat-vpay-apps-section'
 import {
   formatJsonForEditor,
   getJsonError,
@@ -177,13 +178,6 @@ const paymentSchema = z.object({
   WaffoPancakeMerchantID: z.string(),
   WaffoPancakePrivateKey: z.string(),
   WaffoPancakeReturnURL: z.string(),
-  WechatVpayAppId: z.string(),
-  WechatVpayAppSecret: z.string(),
-  WechatVpayOfferId: z.string(),
-  WechatVpayAppKey: z.string(),
-  WechatVpaySandboxAppKey: z.string(),
-  WechatVpayEnv: z.coerce.number().min(0).max(1),
-  WechatVpayPushToken: z.string(),
 })
 
 type PaymentFormValues = z.infer<typeof paymentSchema>
@@ -465,13 +459,6 @@ export function PaymentSettingsSection({
       WaffoPancakeReturnURL: removeTrailingSlash(
         values.WaffoPancakeReturnURL.trim()
       ),
-      WechatVpayAppId: values.WechatVpayAppId.trim(),
-      WechatVpayAppSecret: values.WechatVpayAppSecret.trim(),
-      WechatVpayOfferId: values.WechatVpayOfferId.trim(),
-      WechatVpayAppKey: values.WechatVpayAppKey.trim(),
-      WechatVpaySandboxAppKey: values.WechatVpaySandboxAppKey.trim(),
-      WechatVpayEnv: values.WechatVpayEnv,
-      WechatVpayPushToken: values.WechatVpayPushToken.trim(),
     }
 
     const initial = {
@@ -519,13 +506,6 @@ export function PaymentSettingsSection({
       WaffoPancakeReturnURL: removeTrailingSlash(
         initialRef.current.WaffoPancakeReturnURL.trim()
       ),
-      WechatVpayAppId: initialRef.current.WechatVpayAppId.trim(),
-      WechatVpayAppSecret: initialRef.current.WechatVpayAppSecret.trim(),
-      WechatVpayOfferId: initialRef.current.WechatVpayOfferId.trim(),
-      WechatVpayAppKey: initialRef.current.WechatVpayAppKey.trim(),
-      WechatVpaySandboxAppKey: initialRef.current.WechatVpaySandboxAppKey.trim(),
-      WechatVpayEnv: initialRef.current.WechatVpayEnv,
-      WechatVpayPushToken: initialRef.current.WechatVpayPushToken.trim(),
     }
 
     const updates: Array<{ key: string; value: string | number | boolean }> = []
@@ -729,58 +709,6 @@ export function PaymentSettingsSection({
       sanitized.WaffoPancakeReturnURL !== initial.WaffoPancakeReturnURL ||
       waffoPancakeSelection.storeID !== waffoPancakeSavedBinding.storeID ||
       waffoPancakeSelection.productID !== waffoPancakeSavedBinding.productID
-
-    if (sanitized.WechatVpayAppId !== initial.WechatVpayAppId) {
-      updates.push({ key: 'WechatVpayAppId', value: sanitized.WechatVpayAppId })
-    }
-
-    if (
-      sanitized.WechatVpayAppSecret &&
-      sanitized.WechatVpayAppSecret !== initial.WechatVpayAppSecret
-    ) {
-      updates.push({
-        key: 'WechatVpayAppSecret',
-        value: sanitized.WechatVpayAppSecret,
-      })
-    }
-
-    if (sanitized.WechatVpayOfferId !== initial.WechatVpayOfferId) {
-      updates.push({
-        key: 'WechatVpayOfferId',
-        value: sanitized.WechatVpayOfferId,
-      })
-    }
-
-    if (
-      sanitized.WechatVpayAppKey &&
-      sanitized.WechatVpayAppKey !== initial.WechatVpayAppKey
-    ) {
-      updates.push({ key: 'WechatVpayAppKey', value: sanitized.WechatVpayAppKey })
-    }
-
-    if (
-      sanitized.WechatVpaySandboxAppKey &&
-      sanitized.WechatVpaySandboxAppKey !== initial.WechatVpaySandboxAppKey
-    ) {
-      updates.push({
-        key: 'WechatVpaySandboxAppKey',
-        value: sanitized.WechatVpaySandboxAppKey,
-      })
-    }
-
-    if (sanitized.WechatVpayEnv !== initial.WechatVpayEnv) {
-      updates.push({ key: 'WechatVpayEnv', value: sanitized.WechatVpayEnv })
-    }
-
-    if (
-      sanitized.WechatVpayPushToken &&
-      sanitized.WechatVpayPushToken !== initial.WechatVpayPushToken
-    ) {
-      updates.push({
-        key: 'WechatVpayPushToken',
-        value: sanitized.WechatVpayPushToken,
-      })
-    }
 
     if (updates.length === 0 && !hasWaffoPancakeChanges) {
       toast.info(t('No changes to save'))
@@ -1698,216 +1626,7 @@ export function PaymentSettingsSection({
               value='wechat-vpay'
               className={paymentTabContentClassName}
             >
-              <div className='space-y-4'>
-                <div>
-                  <h3 className='text-lg font-medium'>
-                    {t('WeChat Mini-Program Virtual Payment')}
-                  </h3>
-                  <p className='text-muted-foreground text-sm'>
-                    {t(
-                      'Personal-subject 道具直购 (short_series_goods) integration for mini-program subscription plans. Plans map to an item created in the WeChat MP console under 虚拟支付 → 道具管理; the item price must equal the plan price converted to CNY at the USD exchange rate, exact to the fen.'
-                    )}
-                  </p>
-                </div>
-
-                <div className='rounded-md bg-blue-50 p-4 text-sm text-blue-900 dark:bg-blue-950 dark:text-blue-100'>
-                  <p className='mb-2 font-medium'>
-                    {t('Push Configuration:')}
-                  </p>
-                  <ul className='list-inside list-disc space-y-1'>
-                    <li>
-                      {t('Message push URL:')}{' '}
-                      <code className='rounded bg-blue-100 px-1 py-0.5 text-xs dark:bg-blue-900'>
-                        {'<ServerAddress>/api/subscription/wechat-vpay/notify'}
-                      </code>
-                    </li>
-                    <li>
-                      {t(
-                        'Configure the URL and Token below (plaintext mode) in the WeChat MP console under 开发管理 → 消息推送. The Token verifies delivery and refund pushes.'
-                      )}
-                    </li>
-                  </ul>
-                </div>
-
-                <div className='grid gap-6 md:grid-cols-2'>
-                  <FormField
-                    control={form.control}
-                    name='WechatVpayAppId'
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>{t('Mini-program AppID')}</FormLabel>
-                        <FormControl>
-                          <Input
-                            placeholder='wx1234567890abcdef'
-                            autoComplete='off'
-                            {...field}
-                            onChange={(event) =>
-                              field.onChange(event.target.value)
-                            }
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name='WechatVpayAppSecret'
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>{t('Mini-program AppSecret')}</FormLabel>
-                        <FormControl>
-                          <Input
-                            type='password'
-                            placeholder={t('Enter new secret to update')}
-                            autoComplete='new-password'
-                            {...field}
-                            onChange={(event) =>
-                              field.onChange(event.target.value)
-                            }
-                          />
-                        </FormControl>
-                        <FormDescription>
-                          {t(
-                            'Only needed for the query_order reconciliation endpoint; leave blank unless rotating'
-                          )}
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name='WechatVpayOfferId'
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>{t('Offer ID')}</FormLabel>
-                        <FormControl>
-                          <Input
-                            placeholder='12345'
-                            autoComplete='off'
-                            {...field}
-                            onChange={(event) =>
-                              field.onChange(event.target.value)
-                            }
-                          />
-                        </FormControl>
-                        <FormDescription>
-                          {t('Found in MP console: 虚拟支付 → 基本配置')}
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name='WechatVpayAppKey'
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>{t('Production AppKey')}</FormLabel>
-                        <FormControl>
-                          <Input
-                            type='password'
-                            placeholder={t('Enter new key to update')}
-                            autoComplete='new-password'
-                            {...field}
-                            onChange={(event) =>
-                              field.onChange(event.target.value)
-                            }
-                          />
-                        </FormControl>
-                        <FormDescription>
-                          {t('Leave blank unless rotating the secret')}
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name='WechatVpaySandboxAppKey'
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>{t('Sandbox AppKey')}</FormLabel>
-                        <FormControl>
-                          <Input
-                            type='password'
-                            placeholder={t('Enter new key to update')}
-                            autoComplete='new-password'
-                            {...field}
-                            onChange={(event) =>
-                              field.onChange(event.target.value)
-                            }
-                          />
-                        </FormControl>
-                        <FormDescription>
-                          {t('Only used when Env is set to 1 (sandbox)')}
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name='WechatVpayPushToken'
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>{t('Message Push Token')}</FormLabel>
-                        <FormControl>
-                          <Input
-                            type='password'
-                            placeholder={t('Enter new token to update')}
-                            autoComplete='new-password'
-                            {...field}
-                            onChange={(event) =>
-                              field.onChange(event.target.value)
-                            }
-                          />
-                        </FormControl>
-                        <FormDescription>
-                          {t(
-                            'The Token configured with the push URL in the MP console; verifies every push'
-                          )}
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name='WechatVpayEnv'
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>{t('Environment')}</FormLabel>
-                        <FormControl>
-                          <Input
-                            type='number'
-                            min={0}
-                            max={1}
-                            step={1}
-                            {...field}
-                            onChange={(event) =>
-                              field.onChange(
-                                Number.parseInt(event.target.value, 10) || 0
-                              )
-                            }
-                          />
-                        </FormControl>
-                        <FormDescription>
-                          {t('0 = production (personal subject), 1 = sandbox')}
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-              </div>
+              <WechatVpayAppsSection />
             </TabsContent>
 
             <TabsContent value='waffo' className={paymentTabContentClassName}>

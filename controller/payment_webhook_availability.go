@@ -3,6 +3,7 @@ package controller
 import (
 	"strings"
 
+	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 )
@@ -109,23 +110,14 @@ func isEpayWebhookEnabled() bool {
 	return isEpayTopUpEnabled()
 }
 
-// isWechatVpayConfigured reports whether the WeChat mini-program virtual payment
-// credentials needed to sign orders are populated (presence-of-credentials = enabled,
-// matching the other gateways). PushToken additionally gates the push endpoint.
+// isWechatVpayConfigured reports whether any enabled mini-program app has the
+// credentials needed to sign orders (presence-of-credentials = enabled, matching
+// the other gateways). The push endpoint resolves its own app by the :app_id path
+// and gates on that app's PushConfigured instead of a global flag.
 func isWechatVpayConfigured() bool {
-	return strings.TrimSpace(setting.WechatVpayAppId) != "" &&
-		strings.TrimSpace(setting.WechatVpayOfferId) != "" &&
-		strings.TrimSpace(setting.WechatVpayAppKey) != ""
+	return model.HasSigningWechatVpayApp()
 }
 
 func isWechatVpayTopUpEnabled() bool {
 	return isPaymentComplianceConfirmed() && isWechatVpayConfigured()
-}
-
-func isWechatVpayWebhookConfigured() bool {
-	return strings.TrimSpace(setting.WechatVpayPushToken) != ""
-}
-
-func isWechatVpayWebhookEnabled() bool {
-	return isWechatVpayTopUpEnabled() && isWechatVpayWebhookConfigured()
 }

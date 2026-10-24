@@ -14,14 +14,14 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
-	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 )
 
 // WeChat mini-program virtual payment (个人主体虚拟支付, 道具直购).
 // The mini-program backend (holding a root credential) creates the order for its
-// end user, returns payData to wx.requestVirtualPayment, and WeChat delivers via
-// the XML push on /api/subscription/wechat-vpay/notify.
+// end user against the app's configuration (resolved by AppID), returns payData to
+// wx.requestVirtualPayment, and WeChat delivers via the XML push on
+// /api/subscription/wechat-vpay/notify/:app_id.
 
 // wechatVpayOrderPayload is stored in SubscriptionOrder.ProviderPayload between order
 // creation and completion. After completion the field is overwritten with the raw
@@ -35,13 +35,15 @@ type wechatVpayOrderPayload struct {
 
 type AdminWechatVpayOrderRequest struct {
 	PlanId     int    `json:"plan_id"`
+	AppId      string `json:"app_id"`
 	OpenId     string `json:"openid"`
 	SessionKey string `json:"session_key"`
 }
 
 // AdminCreateWechatVpayOrder creates a pending subscription order for the target user
-// and returns the signed payData for wx.requestVirtualPayment. session_key is used
-// only to compute the user-mode signature and is never persisted or logged.
+// and returns the signed payData for wx.requestVirtualPayment. app_id selects the
+// mini-program the openid/session_key belong to. session_key is used only to compute
+// the user-mode signature and is never persisted or logged.
 func AdminCreateWechatVpayOrder(c *gin.Context) {
 	if !requirePaymentCompliance(c) {
 		return
@@ -58,6 +60,10 @@ func AdminCreateWechatVpayOrder(c *gin.Context) {
 	var req AdminWechatVpayOrderRequest
 	if err := c.ShouldBindJSON(&req); err != nil || req.PlanId <= 0 {
 		common.ApiErrorMsg(c, "参数错误")
+		return
+	}
+	app, err := resolveWechatVpayAppForOrder(c, req.AppId)
+	if err != nil {
 		return
 	}
 	openid := strings.TrimSpace(req.OpenId)
@@ -84,9 +90,9 @@ func AdminCreateWechatVpayOrder(c *gin.Context) {
 		common.ApiErrorMsg(c, "套餐未启用")
 		return
 	}
-	productId := strings.TrimSpace(plan.WechatVpayProductId)
+	productId := plan.WechatVpayProductIdForApp(app.AppId)
 	if productId == "" {
-		common.ApiErrorMsg(c, "该套餐未配置微信虚拟支付道具ID")
+		common.ApiErrorMsg(c, "该套餐未配置此小程序的道具ID")
 		return
 	}
 	// 套餐以 USD 计价，按后台"美元汇率"换算为微信道具的人民币价格（单位：分）。
@@ -107,10 +113,9 @@ func AdminCreateWechatVpayOrder(c *gin.Context) {
 			return
 		}
 	}
-	env := setting.WechatVpayEnv
-	appKey := service.WechatVpayAppKeyForEnv(env)
+	appKey := app.AppKeyForEnv()
 	if appKey == "" {
-		common.ApiErrorMsg(c, "微信虚拟支付 AppKey 未配置")
+		common.ApiErrorMsg(c, "该小程序未配置微信虚拟支付 AppKey")
 		return
 	}
 
@@ -133,6 +138,7 @@ func AdminCreateWechatVpayOrder(c *gin.Context) {
 		TradeNo:         tradeNo,
 		PaymentMethod:   model.PaymentMethodWechatVpay,
 		PaymentProvider: model.PaymentProviderWechatVpay,
+		ProviderAppId:   app.AppId,
 		Status:          common.TopUpStatusPending,
 		CreateTime:      common.GetTimestamp(),
 		ProviderPayload: string(payload),
@@ -143,9 +149,9 @@ func AdminCreateWechatVpayOrder(c *gin.Context) {
 	}
 
 	payData, err := service.BuildWechatVpayPayData(appKey, &service.WechatVpaySignData{
-		OfferId:      strings.TrimSpace(setting.WechatVpayOfferId),
+		OfferId:      strings.TrimSpace(app.OfferId),
 		BuyQuantity:  1,
-		Env:          env,
+		Env:          app.Env,
 		CurrencyType: "CNY",
 		ProductId:    productId,
 		GoodsPrice:   goodsPrice,
@@ -162,11 +168,27 @@ func AdminCreateWechatVpayOrder(c *gin.Context) {
 	recordManageAuditFor(c, user.Id, "subscription.vpay_order_create", map[string]any{
 		"plan_id":  plan.Id,
 		"trade_no": tradeNo,
+		"app_id":   app.AppId,
 	})
 	common.ApiSuccess(c, gin.H{
 		"order_id": tradeNo,
 		"pay_data": payData,
 	})
+}
+
+// resolveWechatVpayAppForOrder loads the mini-program app named by the order request
+// and validates it can sign orders. Writes the error response and returns nil on failure.
+func resolveWechatVpayAppForOrder(c *gin.Context, appId string) (*model.WechatVpayApp, error) {
+	app, err := model.GetWechatVpayAppByAppId(appId)
+	if err != nil {
+		common.ApiError(c, err)
+		return nil, err
+	}
+	if app == nil || !app.SigningConfigured() {
+		common.ApiErrorMsg(c, "小程序不存在或虚拟支付未配置完整")
+		return nil, errors.New("wechat vpay app not usable")
+	}
+	return app, nil
 }
 
 // AdminGetWechatVpayOrder returns the local order state for mini-program backend polling.
@@ -178,13 +200,14 @@ func AdminGetWechatVpayOrder(c *gin.Context) {
 		return
 	}
 	common.ApiSuccess(c, gin.H{
-		"order_id":      order.TradeNo,
-		"user_id":       order.UserId,
-		"plan_id":       order.PlanId,
-		"money":         order.Money,
-		"status":        order.Status,
-		"create_time":   order.CreateTime,
-		"complete_time": order.CompleteTime,
+		"order_id":        order.TradeNo,
+		"user_id":         order.UserId,
+		"plan_id":         order.PlanId,
+		"money":           order.Money,
+		"provider_app_id": order.ProviderAppId,
+		"status":          order.Status,
+		"create_time":     order.CreateTime,
+		"complete_time":   order.CompleteTime,
 	})
 }
 
@@ -202,7 +225,11 @@ func AdminQueryWechatVpayOrderRemote(c *gin.Context) {
 		common.ApiErrorMsg(c, "订单缺少 openid，无法查单")
 		return
 	}
-	result, raw, err := service.QueryWechatVpayOrder(c.Request.Context(), openid, tradeNo)
+	app, err := resolveWechatVpayAppForOrder(c, order.ProviderAppId)
+	if err != nil {
+		return
+	}
+	result, raw, err := service.QueryWechatVpayOrder(c.Request.Context(), app, openid, tradeNo)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -231,17 +258,24 @@ func AdminQueryWechatVpayOrderRemote(c *gin.Context) {
 	})
 }
 
-// WechatVpayNotify receives the WeChat MP message-push channel. GET is the MP console
-// URL verification; POST carries the XML event pushes.
+// WechatVpayNotify receives the WeChat MP message-push channel, routed per
+// mini-program by the :app_id path segment (each MP console configures its own URL).
+// GET is the MP console URL verification; POST carries the XML event pushes.
 func WechatVpayNotify(c *gin.Context) {
-	if !isWechatVpayWebhookEnabled() {
+	appId := strings.TrimSpace(c.Param("app_id"))
+	app, err := model.GetWechatVpayAppByAppId(appId)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if app == nil || !app.PushConfigured() {
+		// 未知/未启用小程序的推送一律拒绝（含 URL 验证）
 		c.String(http.StatusForbidden, "webhook disabled")
 		return
 	}
-	token := strings.TrimSpace(setting.WechatVpayPushToken)
 	if c.Request.Method == http.MethodGet {
 		echostr := c.Query("echostr")
-		if service.VerifyWechatVpayPushSignature(token, c.Query("timestamp"), c.Query("nonce"), echostr, c.Query("signature")) {
+		if service.VerifyWechatVpayPushSignature(app.PushToken, c.Query("timestamp"), c.Query("nonce"), echostr, c.Query("signature")) {
 			c.String(http.StatusOK, echostr)
 		} else {
 			c.String(http.StatusForbidden, "verify failed")
@@ -254,8 +288,8 @@ func WechatVpayNotify(c *gin.Context) {
 		return
 	}
 	// 明文模式：被签名的加密段为空串。
-	if !service.VerifyWechatVpayPushSignature(token, c.Query("timestamp"), c.Query("nonce"), "", c.Query("signature")) {
-		common.SysError("微信虚拟支付推送验签失败")
+	if !service.VerifyWechatVpayPushSignature(app.PushToken, c.Query("timestamp"), c.Query("nonce"), "", c.Query("signature")) {
+		common.SysError("微信虚拟支付推送验签失败: app=" + app.AppId)
 		c.String(http.StatusUnauthorized, "invalid signature")
 		return
 	}
@@ -266,26 +300,44 @@ func WechatVpayNotify(c *gin.Context) {
 		c.String(http.StatusOK, "success")
 		return
 	}
-	if msg.Env != setting.WechatVpayEnv {
-		common.SysError(fmt.Sprintf("微信虚拟支付推送 env 不匹配: push=%d configured=%d", msg.Env, setting.WechatVpayEnv))
+	if msg.Env != app.Env {
+		common.SysError(fmt.Sprintf("微信虚拟支付推送 env 不匹配: app=%s push=%d configured=%d", app.AppId, msg.Env, app.Env))
 		c.String(http.StatusOK, "success")
 		return
 	}
 	switch msg.Event {
 	case service.WechatVpayEventGoodsDeliver:
-		handleWechatVpayDeliverPush(c, msg, body)
+		handleWechatVpayDeliverPush(c, app, msg, body)
 	case service.WechatVpayEventRefund:
-		handleWechatVpayRefundPush(c, msg)
+		handleWechatVpayRefundPush(c, app, msg)
 	default:
 		common.SysLog("微信虚拟支付推送未处理事件: " + msg.Event)
 		c.String(http.StatusOK, "success")
 	}
 }
 
-func handleWechatVpayDeliverPush(c *gin.Context, msg *service.WechatVpayPushMessage, body []byte) {
+// wechatVpayOrderBelongsToApp guards against a push of one mini-program completing
+// another app's order (trade_no is globally unique, so a mismatch is permanent —
+// ack success to stop retries).
+func wechatVpayOrderBelongsToApp(order *model.SubscriptionOrder, app *model.WechatVpayApp) bool {
+	if order.PaymentProvider != model.PaymentProviderWechatVpay {
+		return false
+	}
+	if order.ProviderAppId == "" || order.ProviderAppId == app.AppId {
+		return true
+	}
+	common.SysError(fmt.Sprintf("微信虚拟支付订单 %s 归属小程序 %s 与推送小程序 %s 不符", order.TradeNo, order.ProviderAppId, app.AppId))
+	return false
+}
+
+func handleWechatVpayDeliverPush(c *gin.Context, app *model.WechatVpayApp, msg *service.WechatVpayPushMessage, body []byte) {
 	tradeNo := strings.TrimSpace(msg.OutTradeNo)
 	if tradeNo == "" {
 		common.SysError("微信虚拟支付发货推送缺少 OutTradeNo")
+		c.String(http.StatusOK, "success")
+		return
+	}
+	if order := model.GetSubscriptionOrderByTradeNo(tradeNo); order != nil && !wechatVpayOrderBelongsToApp(order, app) {
 		c.String(http.StatusOK, "success")
 		return
 	}
@@ -306,7 +358,7 @@ func handleWechatVpayDeliverPush(c *gin.Context, msg *service.WechatVpayPushMess
 	}
 }
 
-func handleWechatVpayRefundPush(c *gin.Context, msg *service.WechatVpayPushMessage) {
+func handleWechatVpayRefundPush(c *gin.Context, app *model.WechatVpayApp, msg *service.WechatVpayPushMessage) {
 	tradeNo := strings.TrimSpace(msg.MchOrderId)
 	if tradeNo == "" {
 		common.SysError("微信虚拟支付退款推送缺少 MchOrderId")
@@ -321,6 +373,10 @@ func handleWechatVpayRefundPush(c *gin.Context, msg *service.WechatVpayPushMessa
 	order := model.GetSubscriptionOrderByTradeNo(tradeNo)
 	if order == nil || order.PaymentProvider != model.PaymentProviderWechatVpay {
 		common.SysError("微信虚拟支付退款推送无法匹配订单: " + tradeNo)
+		c.String(http.StatusOK, "success")
+		return
+	}
+	if !wechatVpayOrderBelongsToApp(order, app) {
 		c.String(http.StatusOK, "success")
 		return
 	}

@@ -20,7 +20,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
-	"github.com/QuantumNous/new-api/setting"
+	"github.com/QuantumNous/new-api/model"
 )
 
 // WeChat mini-program virtual payment (个人主体虚拟支付, 道具直购 mode).
@@ -40,9 +40,10 @@ const (
 	// wx.requestVirtualPayment (no leading slash, per official spec).
 	wechatVpayClientUri = "requestVirtualPayment"
 
-	wechatVpayQueryOrderUri = "/xpay/query_order"
-	wechatVpayTokenUrl      = "https://api.weixin.qq.com/cgi-bin/token"
-	wechatVpayApiBase       = "https://api.weixin.qq.com"
+	wechatVpayQueryOrderUri  = "/xpay/query_order"
+	wechatVpayUploadGoodsUri = "/xpay/start_upload_goods"
+	wechatVpayTokenUrl       = "https://api.weixin.qq.com/cgi-bin/token"
+	wechatVpayApiBase        = "https://api.weixin.qq.com"
 )
 
 // query_order order.status values (official spec).
@@ -66,15 +67,6 @@ func WechatVpayOrderStatusIsPaid(status int) bool {
 	return status == WechatVpayOrderStatusPaid ||
 		status == WechatVpayOrderStatusDelivering ||
 		status == WechatVpayOrderStatusDelivered
-}
-
-// WechatVpayAppKeyForEnv returns the AppKey matching the configured env
-// (env 1 = 沙箱 AppKey, otherwise the 现网 AppKey).
-func WechatVpayAppKeyForEnv(env int) string {
-	if env == 1 {
-		return strings.TrimSpace(setting.WechatVpaySandboxAppKey)
-	}
-	return strings.TrimSpace(setting.WechatVpayAppKey)
 }
 
 // WechatVpayCalcPaySig computes the pay signature: hex(HMAC-SHA256(appKey, uri + "&" + signData)).
@@ -227,25 +219,30 @@ func VerifyWechatVpayPushSignature(token, timestamp, nonce, payload, signature s
 
 // ---- access token + query_order ----
 
-var wechatVpayAccessToken = struct {
+// Per-appid access_token cache. One appid has one live token globally; entries are
+// keyed by appid so multiple mini-programs refresh independently.
+type wechatVpayTokenEntry struct {
 	mu        sync.Mutex
 	token     string
 	expiresAt time.Time
-}{}
+}
 
-func getWechatVpayAccessToken(ctx context.Context) (string, error) {
-	wechatVpayAccessToken.mu.Lock()
-	defer wechatVpayAccessToken.mu.Unlock()
-	if wechatVpayAccessToken.token != "" && time.Now().Before(wechatVpayAccessToken.expiresAt) {
-		return wechatVpayAccessToken.token, nil
+var wechatVpayAccessTokens sync.Map // appid -> *wechatVpayTokenEntry
+
+func getWechatVpayAccessToken(ctx context.Context, app *model.WechatVpayApp) (string, error) {
+	entryAny, _ := wechatVpayAccessTokens.LoadOrStore(app.AppId, &wechatVpayTokenEntry{})
+	entry := entryAny.(*wechatVpayTokenEntry)
+	entry.mu.Lock()
+	defer entry.mu.Unlock()
+	if entry.token != "" && time.Now().Before(entry.expiresAt) {
+		return entry.token, nil
 	}
-	appId := strings.TrimSpace(setting.WechatVpayAppId)
-	appSecret := strings.TrimSpace(setting.WechatVpayAppSecret)
-	if appId == "" || appSecret == "" {
-		return "", fmt.Errorf("微信虚拟支付 AppSecret 未配置")
+	appSecret := strings.TrimSpace(app.AppSecret)
+	if appSecret == "" {
+		return "", fmt.Errorf("小程序 %s 未配置 AppSecret", app.AppId)
 	}
 	reqUrl := fmt.Sprintf("%s?grant_type=client_credential&appid=%s&secret=%s",
-		wechatVpayTokenUrl, url.QueryEscape(appId), url.QueryEscape(appSecret))
+		wechatVpayTokenUrl, url.QueryEscape(app.AppId), url.QueryEscape(appSecret))
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqUrl, nil)
 	if err != nil {
 		return "", err
@@ -272,10 +269,10 @@ func getWechatVpayAccessToken(ctx context.Context) (string, error) {
 	if tokenResp.ErrCode != 0 || tokenResp.AccessToken == "" {
 		return "", fmt.Errorf("获取 access_token 失败: errcode=%d errmsg=%s", tokenResp.ErrCode, tokenResp.ErrMsg)
 	}
-	wechatVpayAccessToken.token = tokenResp.AccessToken
+	entry.token = tokenResp.AccessToken
 	// Refresh 5 minutes before expiry.
-	wechatVpayAccessToken.expiresAt = time.Now().Add(time.Duration(tokenResp.ExpiresIn)*time.Second - 5*time.Minute)
-	return wechatVpayAccessToken.token, nil
+	entry.expiresAt = time.Now().Add(time.Duration(tokenResp.ExpiresIn)*time.Second - 5*time.Minute)
+	return entry.token, nil
 }
 
 // WechatVpayQueriedOrder mirrors the order object returned by /xpay/query_order.
@@ -298,51 +295,99 @@ type WechatVpayQueryOrderResult struct {
 	Order   *WechatVpayQueriedOrder `json:"order"`
 }
 
-// QueryWechatVpayOrder calls POST /xpay/query_order (pay signature only) as the
-// delivery-fallback reconciliation path. The raw response body is also returned
-// for admin diagnostics.
-func QueryWechatVpayOrder(ctx context.Context, openid, outTradeNo string) (*WechatVpayQueryOrderResult, []byte, error) {
-	if openid == "" || outTradeNo == "" {
-		return nil, nil, fmt.Errorf("openid 和订单号不能为空")
+// postWechatVpayApi signs (pay_sig) and POSTs an /xpay/* server API call with the
+// given mini-program app's credentials. Returns the raw response body.
+func postWechatVpayApi(ctx context.Context, app *model.WechatVpayApp, uri string, bodyObj any) ([]byte, error) {
+	if app == nil {
+		return nil, fmt.Errorf("小程序配置不存在")
 	}
-	appKey := WechatVpayAppKeyForEnv(setting.WechatVpayEnv)
+	appKey := app.AppKeyForEnv()
 	if appKey == "" {
-		return nil, nil, fmt.Errorf("微信虚拟支付 AppKey 未配置")
+		return nil, fmt.Errorf("小程序 %s 未配置 AppKey", app.AppId)
 	}
-	accessToken, err := getWechatVpayAccessToken(ctx)
+	accessToken, err := getWechatVpayAccessToken(ctx, app)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	body, err := common.Marshal(map[string]any{
-		"openid":   openid,
-		"env":      setting.WechatVpayEnv,
-		"order_id": outTradeNo,
-	})
+	body, err := common.Marshal(bodyObj)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	paySig := WechatVpayCalcPaySig(appKey, wechatVpayQueryOrderUri, string(body))
+	paySig := WechatVpayCalcPaySig(appKey, uri, string(body))
 	reqUrl := fmt.Sprintf("%s%s?access_token=%s&pay_sig=%s",
-		wechatVpayApiBase, wechatVpayQueryOrderUri,
+		wechatVpayApiBase, uri,
 		url.QueryEscape(accessToken), url.QueryEscape(paySig))
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, reqUrl, bytes.NewReader(body))
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	client := &http.Client{Timeout: 15 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	defer func() { _ = resp.Body.Close() }()
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	return io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+}
+
+// QueryWechatVpayOrder calls POST /xpay/query_order (pay signature only) as the
+// delivery-fallback reconciliation path, using the order's mini-program app for
+// credentials. The raw response body is also returned for admin diagnostics.
+func QueryWechatVpayOrder(ctx context.Context, app *model.WechatVpayApp, openid, outTradeNo string) (*WechatVpayQueryOrderResult, []byte, error) {
+	if openid == "" || outTradeNo == "" {
+		return nil, nil, fmt.Errorf("openid 和订单号不能为空")
+	}
+	if app == nil {
+		return nil, nil, fmt.Errorf("订单所属小程序配置不存在")
+	}
+	raw, err := postWechatVpayApi(ctx, app, wechatVpayQueryOrderUri, map[string]any{
+		"openid":   openid,
+		"env":      app.Env,
+		"order_id": outTradeNo,
+	})
 	if err != nil {
 		return nil, raw, err
 	}
 	var result WechatVpayQueryOrderResult
 	if err := common.Unmarshal(raw, &result); err != nil {
 		return nil, raw, fmt.Errorf("解析 query_order 响应失败: %w", err)
+	}
+	return &result, raw, nil
+}
+
+// WechatVpayUploadItem is one item of the /xpay/start_upload_goods payload.
+// Id is caller-chosen (letters/digits/_/-, <=20 chars); the same Id can be
+// re-uploaded to update the dev-version item.
+type WechatVpayUploadItem struct {
+	Id      string `json:"id"`
+	Name    string `json:"name"`
+	Price   int64  `json:"price"` // 单位：分
+	Remark  string `json:"remark"`
+	ItemUrl string `json:"item_url"` // jpg/png，微信侧会拉取校验
+}
+
+// WechatVpayUploadGoodsResult mirrors the start_upload_goods response.
+type WechatVpayUploadGoodsResult struct {
+	ErrCode int    `json:"errcode"`
+	ErrMsg  string `json:"errmsg"`
+}
+
+// StartWechatVpayUploadGoods starts an item upload task (one item per call,
+// uploaded to the dev version; publish is a separate API). Note: the personal
+// (个人主体) doc does not list the goods APIs — whether an app may call them
+// must be probed per app.
+func StartWechatVpayUploadGoods(ctx context.Context, app *model.WechatVpayApp, item WechatVpayUploadItem) (*WechatVpayUploadGoodsResult, []byte, error) {
+	raw, err := postWechatVpayApi(ctx, app, wechatVpayUploadGoodsUri, map[string]any{
+		"upload_item": []WechatVpayUploadItem{item},
+		"env":         app.Env,
+	})
+	if err != nil {
+		return nil, raw, err
+	}
+	var result WechatVpayUploadGoodsResult
+	if err := common.Unmarshal(raw, &result); err != nil {
+		return nil, raw, fmt.Errorf("解析 start_upload_goods 响应失败: %w", err)
 	}
 	return &result, raw, nil
 }

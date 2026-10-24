@@ -44,7 +44,8 @@ export const subscriptionPlanSchema = z.object({
   stripe_price_id: z.string().optional(),
   creem_product_id: z.string().optional(),
   waffo_pancake_product_id: z.string().optional(),
-  wechat_vpay_product_id: z.string().optional(),
+  // appid → 道具 ID 的 JSON 映射（各小程序 MP 后台独立登记道具）
+  wechat_vpay_product_ids: z.string().optional(),
 })
 
 export type SubscriptionPlan = z.infer<typeof subscriptionPlanSchema>
@@ -88,6 +89,14 @@ export interface ApiResponse<T = unknown> {
 
 export interface PlanPayload {
   plan: Partial<SubscriptionPlan>
+}
+
+// 微信虚拟支付小程序选项（套餐编辑按小程序填道具 ID）
+export interface WechatVpayAppOption {
+  id: number
+  app_id: string
+  name: string
+  enabled: boolean
 }
 
 export interface SubscriptionPayRequest {

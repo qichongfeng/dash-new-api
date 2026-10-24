@@ -30,6 +30,7 @@ import type {
   SubscriptionPayResponse,
   SubscriptionPayRequest,
   SelfSubscriptionData,
+  WechatVpayAppOption,
 } from './types'
 
 // ============================================================================
@@ -188,6 +189,13 @@ export async function listWaffoPancakeSubscriptionProductOptions(): Promise<
   const res = await api.get(
     '/api/option/waffo-pancake/subscription-product-options'
   )
+  return res.data
+}
+
+export async function listWechatVpayApps(): Promise<
+  ApiResponse<WechatVpayAppOption[]>
+> {
+  const res = await api.get('/api/subscription/admin/wechat-vpay/apps')
   return res.data
 }
 

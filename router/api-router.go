@@ -203,6 +203,14 @@ func SetApiRouter(router *gin.Engine) {
 			subscriptionAdminRoute.POST("/users/:id/wechat-vpay/orders", middleware.CriticalRateLimit(), controller.AdminCreateWechatVpayOrder)
 			subscriptionAdminRoute.GET("/wechat-vpay/orders/:trade_no", controller.AdminGetWechatVpayOrder)
 			subscriptionAdminRoute.POST("/wechat-vpay/orders/:trade_no/query", controller.AdminQueryWechatVpayOrderRemote)
+			// Mini-program app management (multi-app credentials)
+			subscriptionAdminRoute.GET("/wechat-vpay/apps", controller.AdminListWechatVpayApps)
+			subscriptionAdminRoute.GET("/wechat-vpay/apps/:id", controller.AdminGetWechatVpayApp)
+			subscriptionAdminRoute.POST("/wechat-vpay/apps", controller.AdminCreateWechatVpayApp)
+			subscriptionAdminRoute.PUT("/wechat-vpay/apps/:id", controller.AdminUpdateWechatVpayApp)
+			subscriptionAdminRoute.DELETE("/wechat-vpay/apps/:id", controller.AdminDeleteWechatVpayApp)
+			// One-shot probe: can this mini-program call /xpay/start_upload_goods?
+			subscriptionAdminRoute.POST("/wechat-vpay/apps/:id/goods-probe", controller.AdminWechatVpayAppGoodsProbe)
 		}
 
 		// Announcements for external apps (e.g. qianmiao mini-program)
@@ -218,9 +226,10 @@ func SetApiRouter(router *gin.Engine) {
 			announcementAdminRoute.DELETE("/:id", controller.AdminDeleteAnnouncement)
 		}
 
-		// Subscription payment callbacks (no auth)
-		apiRouter.GET("/subscription/wechat-vpay/notify", controller.WechatVpayNotify)
-		apiRouter.POST("/subscription/wechat-vpay/notify", anonymousRequestBodyLimit, controller.WechatVpayNotify)
+		// Subscription payment callbacks (no auth). WeChat VPay pushes are routed per
+		// mini-program: each MP console configures /notify/<app_id> with its own Token.
+		apiRouter.GET("/subscription/wechat-vpay/notify/:app_id", controller.WechatVpayNotify)
+		apiRouter.POST("/subscription/wechat-vpay/notify/:app_id", anonymousRequestBodyLimit, controller.WechatVpayNotify)
 		apiRouter.POST("/subscription/epay/notify", anonymousRequestBodyLimit, controller.SubscriptionEpayNotify)
 		apiRouter.GET("/subscription/epay/notify", controller.SubscriptionEpayNotify)
 		apiRouter.GET("/subscription/epay/return", controller.SubscriptionEpayReturn)

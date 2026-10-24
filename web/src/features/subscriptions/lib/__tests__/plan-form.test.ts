@@ -50,3 +50,36 @@ describe('plan form currency handling', () => {
     expect(values.title).toBe('Monthly')
   })
 })
+
+describe('plan form wechat vpay product mapping', () => {
+  it('parses the per-app product map and serializes it back to JSON', () => {
+    const values = planToFormValues({
+      ...basePlan,
+      wechat_vpay_product_ids:
+        '{"wxapp000000000001":"prod_a","wxapp000000000002":"prod_b"}',
+    } as SubscriptionPlan)
+    expect(values.wechat_vpay_products).toEqual({
+      wxapp000000000001: 'prod_a',
+      wxapp000000000002: 'prod_b',
+    })
+
+    const payload = formValuesToPlanPayload({
+      ...values,
+      wechat_vpay_products: { wxapp000000000001: 'prod_a' },
+    })
+    expect(payload.plan.wechat_vpay_product_ids).toBe(
+      '{"wxapp000000000001":"prod_a"}'
+    )
+    expect('wechat_vpay_products' in payload.plan).toBe(false)
+  })
+
+  it('falls back to an empty map for missing or malformed JSON', () => {
+    expect(planToFormValues(basePlan).wechat_vpay_products).toEqual({})
+    expect(
+      planToFormValues({
+        ...basePlan,
+        wechat_vpay_product_ids: 'not json',
+      } as SubscriptionPlan).wechat_vpay_products
+    ).toEqual({})
+  })
+})

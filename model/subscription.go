@@ -267,6 +267,24 @@ func GetSubscriptionOrderByTradeNo(tradeNo string) *SubscriptionOrder {
 	return &order
 }
 
+// ListSubscriptionOrdersByUser lists a user's subscription orders, newest first
+// (mini-program billing pages). paymentProvider "" = all channels. ProviderPayload is
+// never selected — it holds buyer openid and must not leave the server.
+func ListSubscriptionOrdersByUser(userId int, paymentProvider string, limit int) ([]SubscriptionOrder, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+	q := DB.Model(&SubscriptionOrder{}).
+		Select("id, user_id, plan_id, money, trade_no, payment_method, payment_provider, provider_app_id, status, create_time, complete_time").
+		Where("user_id = ?", userId)
+	if paymentProvider != "" {
+		q = q.Where("payment_provider = ?", paymentProvider)
+	}
+	var orders []SubscriptionOrder
+	err := q.Order("id DESC").Limit(limit).Find(&orders).Error
+	return orders, err
+}
+
 // User subscription instance
 type UserSubscription struct {
 	Id     int `json:"id"`

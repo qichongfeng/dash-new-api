@@ -191,6 +191,24 @@ func resolveWechatVpayAppForOrder(c *gin.Context, appId string) (*model.WechatVp
 	return app, nil
 }
 
+// AdminListWechatVpayOrders lists a user's wechat-vpay subscription orders, newest first
+// (mini-program backend「订阅订单」page). Rows come from the model without ProviderPayload
+// (buyer openid never leaves the server). ?limit= caps at 100, default 50.
+func AdminListWechatVpayOrders(c *gin.Context) {
+	userId, _ := strconv.Atoi(c.Param("id"))
+	if userId <= 0 {
+		common.ApiErrorMsg(c, "无效的用户ID")
+		return
+	}
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
+	orders, err := model.ListSubscriptionOrdersByUser(userId, model.PaymentProviderWechatVpay, limit)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, orders)
+}
+
 // AdminGetWechatVpayOrder returns the local order state for mini-program backend polling.
 func AdminGetWechatVpayOrder(c *gin.Context) {
 	tradeNo := strings.TrimSpace(c.Param("trade_no"))

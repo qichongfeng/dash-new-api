@@ -201,6 +201,7 @@ func SetApiRouter(router *gin.Engine) {
 
 			// WeChat mini-program virtual payment (created by external mini-program backends)
 			subscriptionAdminRoute.POST("/users/:id/wechat-vpay/orders", middleware.CriticalRateLimit(), controller.AdminCreateWechatVpayOrder)
+			subscriptionAdminRoute.GET("/users/:id/wechat-vpay/orders", controller.AdminListWechatVpayOrders)
 			subscriptionAdminRoute.GET("/wechat-vpay/orders/:trade_no", controller.AdminGetWechatVpayOrder)
 			subscriptionAdminRoute.POST("/wechat-vpay/orders/:trade_no/query", controller.AdminQueryWechatVpayOrderRemote)
 			// Mini-program app management (multi-app credentials)

@@ -293,7 +293,10 @@ func WechatVpayNotify(c *gin.Context) {
 	}
 	if c.Request.Method == http.MethodGet {
 		echostr := c.Query("echostr")
-		if service.VerifyWechatVpayPushSignature(app.PushToken, c.Query("timestamp"), c.Query("nonce"), echostr, c.Query("signature")) {
+		// MP 后台「服务器配置验证」的标准签名只含 token/timestamp/nonce（不含 echostr）；
+		// 兼容历史口径（echostr 计入签名）两种任一通过——能算出任一变体即证明持 token
+		if service.VerifyWechatVpayPushSignature(app.PushToken, c.Query("timestamp"), c.Query("nonce"), "", c.Query("signature")) ||
+			service.VerifyWechatVpayPushSignature(app.PushToken, c.Query("timestamp"), c.Query("nonce"), echostr, c.Query("signature")) {
 			c.String(http.StatusOK, echostr)
 		} else {
 			c.String(http.StatusForbidden, "verify failed")
